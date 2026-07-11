@@ -41,7 +41,7 @@ async function main() {
     update: {},
   });
 
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@epicdreamsworld.com';
+  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'systems.roncal@gmail.com';
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMeAdmin123!';
   const passwordHash = await bcrypt.hash(adminPassword, 12);
 

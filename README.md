@@ -47,7 +47,7 @@ Opcional: `NEXT_PUBLIC_BASE_PATH=/wps-admin` solo si quieres subruta.
 El build ejecuta: `prisma generate` → `db push` + seed → `next build`
 
 Login: `https://tu-app.vercel.app/login`  
-Default: `admin@epicdreamsworld.com` / `ChangeMeAdmin123!`
+Default: `systems.roncal@gmail.com` (o el valor de `SEED_ADMIN_EMAIL`) / `SEED_ADMIN_PASSWORD`
 
 ## Deploy en Netlify
 

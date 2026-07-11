@@ -62,7 +62,7 @@ async function seedIfNeeded() {
       update: {},
     });
 
-    const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@epicdreamsworld.com')
+    const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'systems.roncal@gmail.com')
       .toLowerCase()
       .trim();
     const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMeAdmin123!';
