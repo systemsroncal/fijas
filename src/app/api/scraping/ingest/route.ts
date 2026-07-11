@@ -1,0 +1,157 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
+import { validateApiSecret } from '@/lib/api-guard';
+import { buildMatchKey } from '@/lib/match-key';
+import { LogCategory, Prisma } from '@prisma/client';
+
+const predictionSchema = z.object({
+  externalId: z.string().optional(),
+  matchDate: z.string(),
+  kickoff: z.string().optional(),
+  league: z.string(),
+  homeTeam: z.string(),
+  awayTeam: z.string(),
+  betType: z.string().default('1X2'),
+  betChoice: z.string().optional(),
+  odds: z.number().optional(),
+  oddsHome: z.number().optional(),
+  oddsDraw: z.number().optional(),
+  oddsAway: z.number().optional(),
+  oddsOver: z.number().optional(),
+  oddsUnder: z.number().optional(),
+  oddsBttsYes: z.number().optional(),
+  oddsBttsNo: z.number().optional(),
+  statsNote: z.string().optional(),
+  isLive: z.boolean().optional(),
+});
+
+const bodySchema = z.object({
+  sourceSlug: z.string(),
+  predictions: z.array(predictionSchema).default([]),
+  suggestedAccumulators: z
+    .array(
+      z.object({
+        title: z.string(),
+        totalOdds: z.number(),
+        matchDate: z.string(),
+        legs: z.array(z.record(z.unknown())),
+      })
+    )
+    .optional(),
+});
+
+/**
+ * Ingesta de datos del scraper (protegido con API_SECRET).
+ */
+export async function POST(request: Request) {
+  if (!validateApiSecret(request)) {
+    return NextResponse.json({ error: 'Invalid API secret' }, { status: 401 });
+  }
+
+  try {
+    const json = await request.json();
+    const data = bodySchema.parse(json);
+
+    const source = await prisma.scrapingSource.findUnique({
+      where: { slug: data.sourceSlug },
+    });
+    if (!source) {
+      return NextResponse.json({ error: `Unknown source: ${data.sourceSlug}` }, { status: 404 });
+    }
+
+    await prisma.scrapingSource.update({
+      where: { id: source.id },
+      data: { scrapingStatus: 'RUNNING' },
+    });
+
+    let inserted = 0;
+
+    for (const pred of data.predictions) {
+      const matchDate = new Date(pred.matchDate);
+      const matchKey = buildMatchKey(matchDate, pred.homeTeam, pred.awayTeam, pred.league);
+
+      const match = await prisma.match.upsert({
+        where: { matchKey },
+        create: {
+          matchKey,
+          matchDate,
+          kickoff: pred.kickoff,
+          league: pred.league,
+          homeTeam: pred.homeTeam,
+          awayTeam: pred.awayTeam,
+          isLive: pred.isLive ?? false,
+        },
+        update: {
+          kickoff: pred.kickoff,
+          isLive: pred.isLive ?? false,
+        },
+      });
+
+      await prisma.scrapedPrediction.create({
+        data: {
+          sourceId: source.id,
+          matchId: match.id,
+          externalId: pred.externalId,
+          betType: pred.betType,
+          betChoice: pred.betChoice ?? 'N/A',
+          odds: pred.odds != null ? new Prisma.Decimal(pred.odds) : null,
+          oddsHome: pred.oddsHome != null ? new Prisma.Decimal(pred.oddsHome) : null,
+          oddsDraw: pred.oddsDraw != null ? new Prisma.Decimal(pred.oddsDraw) : null,
+          oddsAway: pred.oddsAway != null ? new Prisma.Decimal(pred.oddsAway) : null,
+          oddsOver: pred.oddsOver != null ? new Prisma.Decimal(pred.oddsOver) : null,
+          oddsUnder: pred.oddsUnder != null ? new Prisma.Decimal(pred.oddsUnder) : null,
+          oddsBttsYes: pred.oddsBttsYes != null ? new Prisma.Decimal(pred.oddsBttsYes) : null,
+          oddsBttsNo: pred.oddsBttsNo != null ? new Prisma.Decimal(pred.oddsBttsNo) : null,
+          statsNote: pred.statsNote,
+          isLive: pred.isLive ?? false,
+        },
+      });
+      inserted += 1;
+    }
+
+    if (data.suggestedAccumulators?.length) {
+      for (const acc of data.suggestedAccumulators) {
+        await prisma.suggestedAccumulator.create({
+          data: {
+            sourceSlug: data.sourceSlug,
+            title: acc.title,
+            totalOdds: new Prisma.Decimal(acc.totalOdds),
+            matchDate: new Date(acc.matchDate),
+            legsJson: acc.legs as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
+
+    await prisma.scrapingSource.update({
+      where: { id: source.id },
+      data: {
+        scrapingStatus: 'SUCCESS',
+        lastScraped: new Date(),
+        lastError: null,
+      },
+    });
+
+    await prisma.systemLog.create({
+      data: {
+        category: LogCategory.SCRAPING,
+        message: `Ingest ${data.sourceSlug}: ${inserted} predictions`,
+        meta: { inserted, sourceSlug: data.sourceSlug },
+      },
+    });
+
+    return NextResponse.json({ ok: true, inserted });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : 'Ingest failed';
+    await prisma.systemLog.create({
+      data: {
+        category: LogCategory.SCRAPING,
+        level: 'error',
+        message,
+      },
+    });
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
