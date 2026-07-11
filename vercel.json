@@ -1,5 +1,5 @@
 {
   "framework": "nextjs",
-  "buildCommand": "prisma generate && node scripts/bootstrap-db.js && next build",
+  "buildCommand": "npm run build",
   "installCommand": "npm install"
 }

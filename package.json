@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && node scripts/bootstrap-db.js && next build",
+    "build": "prisma generate && node scripts/build-prep.js && next build",
     "start": "node server.js",
     "lint": "next lint",
     "test": "jest --passWithNoTests",
@@ -13,6 +13,9 @@
     "db:bootstrap": "node scripts/bootstrap-db.js",
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate"
+  },
+  "engines": {
+    "node": "20.x || 22.x"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.9.1",
@@ -23,6 +26,7 @@
     "@mui/icons-material": "^7.3.5",
     "@mui/lab": "^7.0.1-beta.19",
     "@mui/material": "^7.3.5",
+    "@netlify/plugin-nextjs": "^5.15.12",
     "@prisma/client": "^6.9.0",
     "@tabler/icons-react": "^3.35.0",
     "@types/node": "^24.10.1",
