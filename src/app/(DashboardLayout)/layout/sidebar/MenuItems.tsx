@@ -10,7 +10,6 @@ import {
   IconSpider,
   IconFileText,
 } from '@tabler/icons-react';
-import { uniqueId } from 'lodash';
 
 const Menuitems = [
   {
@@ -18,25 +17,25 @@ const Menuitems = [
     subheader: 'APUESTAS',
   },
   {
-    id: uniqueId(),
+    id: 'dashboard',
     title: 'Partidos de hoy',
     icon: IconLayoutDashboard,
     href: '/dashboard',
   },
   {
-    id: uniqueId(),
+    id: 'suggested-accumulators',
     title: 'Acumuladas sugeridas',
     icon: IconStack2,
     href: '/accumulators/suggested',
   },
   {
-    id: uniqueId(),
+    id: 'accumulator-builder',
     title: 'Creador de combinadas',
     icon: IconPlus,
     href: '/accumulators/builder',
   },
   {
-    id: uniqueId(),
+    id: 'analyses',
     title: 'Análisis IA',
     icon: IconBrain,
     href: '/analyses',
@@ -46,7 +45,7 @@ const Menuitems = [
     subheader: 'CUENTA',
   },
   {
-    id: uniqueId(),
+    id: 'api-keys',
     title: 'API Keys',
     icon: IconKey,
     href: '/settings/api-keys',
@@ -56,31 +55,31 @@ const Menuitems = [
     subheader: 'ADMIN',
   },
   {
-    id: uniqueId(),
+    id: 'admin-users',
     title: 'Usuarios',
     icon: IconUsers,
     href: '/admin/users',
   },
   {
-    id: uniqueId(),
+    id: 'admin-sessions',
     title: 'Sesiones',
     icon: IconClock,
     href: '/admin/sessions',
   },
   {
-    id: uniqueId(),
+    id: 'admin-scrapers',
     title: 'Scrapers',
     icon: IconSpider,
     href: '/admin/scrapers',
   },
   {
-    id: uniqueId(),
+    id: 'admin-logs',
     title: 'Logs',
     icon: IconFileText,
     href: '/admin/logs',
   },
   {
-    id: uniqueId(),
+    id: 'admin-panel',
     title: 'Panel Admin',
     icon: IconShield,
     href: '/admin',
