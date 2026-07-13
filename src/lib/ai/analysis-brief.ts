@@ -21,9 +21,10 @@ export function sanitizeNarrative(text: string | null | undefined, fallback: str
 export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBrief {
   const m = payload.match;
   const form = payload.form;
-  const bookMarkets = payload.markets.filter((x) => x.source === 'book');
-  const impliedMarkets = payload.markets.filter((x) => x.source === 'implied');
-  const best = [...payload.markets].sort((a, b) => b.edge - a.edge)[0];
+  const markets = Array.isArray(payload.markets) ? payload.markets : [];
+  const bookMarkets = markets.filter((x) => x.source === 'book');
+  const impliedMarkets = markets.filter((x) => x.source === 'implied');
+  const best = [...markets].sort((a, b) => b.edge - a.edge)[0];
 
   const bullets: string[] = [];
   if (m && m.homeTeam !== 'N/A') {
@@ -32,15 +33,19 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
         (m.tip ? ` Tip scrapeado: ${m.tip}.` : ' Sin tip scrapeado.')
     );
   }
-  bullets.push(
-    `Probabilidades modelo Poisson — Local ${payload.probs.home}%, Empate ${payload.probs.draw}%, Visitante ${payload.probs.away}%.`
-  );
-  bullets.push(
-    `Marcador más probable según el modelo: ${payload.scoreline.mostLikely}` +
-      (payload.scoreline.alternatives?.length
-        ? ` (alternativas: ${payload.scoreline.alternatives.join(', ')}).`
-        : '.')
-  );
+  if (payload.probs) {
+    bullets.push(
+      `Probabilidades modelo Poisson — Local ${payload.probs.home}%, Empate ${payload.probs.draw}%, Visitante ${payload.probs.away}%.`
+    );
+  }
+  if (payload.scoreline?.mostLikely) {
+    bullets.push(
+      `Marcador más probable según el modelo: ${payload.scoreline.mostLikely}` +
+        (payload.scoreline.alternatives?.length
+          ? ` (alternativas: ${payload.scoreline.alternatives.join(', ')}).`
+          : '.')
+    );
+  }
   if (payload.expected?.xgHome != null && payload.expected?.xgAway != null) {
     bullets.push(
       `Goles esperados del modelo (λ/xG): ${payload.expected.xgHome} – ${payload.expected.xgAway}.`
@@ -110,6 +115,17 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
 
 /** Asegura brief en payloads antiguos del historial. */
 export function withBrief(payload: StructuredMatchPayload): StructuredMatchPayload {
+  if (!payload?.probs || !Array.isArray(payload.markets)) {
+    return {
+      ...payload,
+      brief: {
+        headline: 'Resultado de combinada',
+        bullets: ['Este payload no incluye dashboard de partido.'],
+        dataSources: ['Análisis de acumulada'],
+        limitations: ['Usa Ver resultado en historial de combinadas.'],
+      },
+    };
+  }
   const edgeSummary = sanitizeNarrative(
     payload.edgeSummary,
     'Análisis basado en modelo Poisson y datos scrapeados disponibles.'

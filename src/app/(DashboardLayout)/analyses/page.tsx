@@ -53,13 +53,36 @@ type Analysis = {
   evScore: string | null;
   recommendedStake: string | null;
   response: string;
-  payload?: StructuredMatchPayload | null;
+  payload?: unknown;
   createdAt: string;
   accumulator: Accumulator | null;
   match?: MatchOpt | null;
 };
 
+type AccumulatorResult = {
+  riskScore: string | number | null;
+  evScore: string | number | null;
+  recommendedStake: string | number | null;
+  provider: string;
+  summary?: string;
+  response?: string;
+  name?: string | null;
+};
+
 type Mode = 'MATCH' | 'ACCUMULATOR' | 'RANDOM' | 'SUGGESTED';
+
+function isMatchDashboardPayload(value: unknown): value is StructuredMatchPayload {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Record<string, unknown>;
+  const probs = p.probs as Record<string, unknown> | undefined;
+  return (
+    Array.isArray(p.markets) &&
+    !!probs &&
+    typeof probs.home === 'number' &&
+    !!p.scoreline &&
+    (p.mode === 'MATCH' || p.mode === 'RANDOM')
+  );
+}
 
 /**
  * Análisis IA: partido, combinada, sugeridas y scanner aleatorio.
@@ -78,6 +101,7 @@ export default function AnalysesPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<StructuredMatchPayload | null>(null);
+  const [accResult, setAccResult] = useState<AccumulatorResult | null>(null);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
 
   const refresh = async () => {
@@ -117,6 +141,7 @@ export default function AnalysesPage() {
     setError(null);
     setResultMsg(null);
     setPayload(null);
+    setAccResult(null);
 
     const activeMode = override?.mode ?? mode;
     const activeMatchId = override?.matchId ?? matchId;
@@ -149,35 +174,76 @@ export default function AnalysesPage() {
             ? { mode: 'ACCUMULATOR', suggestedId, provider }
             : { mode: 'ACCUMULATOR', accumulatorId, provider };
 
-    const res = await fetch(apiUrl('/api/analyses'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    setRunning(false);
-    if (!res.ok) {
-      setError(typeof data.error === 'string' ? data.error : 'Análisis fallido');
-      return;
-    }
+    try {
+      const res = await fetch(apiUrl('/api/analyses'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(typeof data.error === 'string' ? data.error : 'Análisis fallido');
+        return;
+      }
 
-    if (data.payload) {
-      setPayload(data.payload as StructuredMatchPayload);
-    } else if (data.analysis?.payload) {
-      setPayload(data.analysis.payload as StructuredMatchPayload);
-    }
+      const candidate = data.payload ?? data.analysis?.payload;
+      if (isMatchDashboardPayload(candidate)) {
+        setPayload(candidate);
+      } else if (activeMode === 'ACCUMULATOR' || activeMode === 'SUGGESTED') {
+        const a = data.analysis;
+        setAccResult({
+          riskScore: a?.riskScore ?? data.result?.riskScore ?? null,
+          evScore: a?.evScore ?? data.result?.evScore ?? null,
+          recommendedStake: a?.recommendedStake ?? data.result?.recommendedStake ?? null,
+          provider: a?.iaProvider ?? data.result?.providerUsed ?? provider,
+          summary:
+            typeof candidate === 'object' && candidate && 'summary' in candidate
+              ? String((candidate as { summary?: string }).summary ?? '')
+              : undefined,
+          response: a?.response,
+          name: a?.accumulator?.name ?? null,
+        });
+      }
 
-    if (data.result || data.analysis) {
       const a = data.analysis;
       setResultMsg(
         `Riesgo: ${a?.riskScore ?? data.result?.riskScore} | EV: ${a?.evScore ?? data.result?.evScore} | Stake: ${a?.recommendedStake ?? data.result?.recommendedStake} | ${a?.iaProvider ?? data.result?.providerUsed}`
       );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error de red al analizar');
+    } finally {
+      setRunning(false);
     }
-    refresh();
   };
 
   const analyzeMatchById = (id: string) => {
     void run({ mode: 'MATCH', matchId: id });
+  };
+
+  const openHistory = (a: Analysis) => {
+    setError(null);
+    setResultMsg(null);
+    setPayload(null);
+    setAccResult(null);
+    if (isMatchDashboardPayload(a.payload)) {
+      setPayload(a.payload);
+      return;
+    }
+    if (a.mode === 'ACCUMULATOR' || (!a.match && a.accumulator)) {
+      const p = a.payload as { summary?: string } | null;
+      setAccResult({
+        riskScore: a.riskScore,
+        evScore: a.evScore,
+        recommendedStake: a.recommendedStake,
+        provider: a.iaProvider,
+        summary: p?.summary,
+        response: a.response,
+        name: a.accumulator?.name ?? null,
+      });
+      return;
+    }
+    setError('Este análisis no tiene dashboard de partido (payload incompleto o antiguo).');
   };
 
   return (
@@ -213,7 +279,9 @@ export default function AnalysesPage() {
                   value={matchId}
                   onChange={(e) => setMatchId(e.target.value)}
                   helperText={
-                    matches.length === 0 ? 'Sin partidos hoy — ejecuta scrapers' : `${matches.length} partidos`
+                    matches.length === 0
+                      ? 'Sin partidos hoy — ejecuta scrapers'
+                      : `${matches.length} partidos`
                   }
                 >
                   {matches.map((m) => (
@@ -257,8 +325,8 @@ export default function AnalysesPage() {
               )}
               {mode === 'RANDOM' && (
                 <Alert severity="info" sx={{ flex: 1 }}>
-                  Escanea partidos de hoy con Poisson + edge, propone combinadas segura / value /
-                  arriesgada. Opcionalmente enriquece props con tu API key.
+                  Escanea partidos de hoy con Poisson + edge. Solo partidos válidos (sin cabeceras
+                  basura).
                 </Alert>
               )}
               <TextField
@@ -275,9 +343,9 @@ export default function AnalysesPage() {
                   </MenuItem>
                 ))}
               </TextField>
-            <Button variant="contained" onClick={() => run()} disabled={running}>
-              {running ? <CircularProgress size={22} /> : 'Analizar'}
-            </Button>
+              <Button variant="contained" onClick={() => run()} disabled={running}>
+                {running ? <CircularProgress size={22} /> : 'Analizar'}
+              </Button>
             </Stack>
           </Stack>
           {error && (
@@ -299,6 +367,36 @@ export default function AnalysesPage() {
         </Box>
       )}
 
+      {accResult && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" fontWeight={700} gutterBottom>
+              Resultado · {accResult.name ?? 'Combinada'}
+            </Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" mb={2}>
+              <Chip label={`Riesgo ${accResult.riskScore}`} />
+              <Chip label={`EV ${accResult.evScore}`} />
+              <Chip label={`Stake ${accResult.recommendedStake}`} />
+              <Chip label={accResult.provider} color="primary" variant="outlined" />
+            </Stack>
+            {accResult.summary && (
+              <Typography
+                variant="body2"
+                component="pre"
+                sx={{ whiteSpace: 'pre-wrap', mb: 1, color: 'text.secondary' }}
+              >
+                {accResult.summary}
+              </Typography>
+            )}
+            {accResult.response && (
+              <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
+                {accResult.response.slice(0, 2000)}
+              </Typography>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {loading ? (
         <Box textAlign="center">
           <CircularProgress />
@@ -309,37 +407,30 @@ export default function AnalysesPage() {
           {analyses.length === 0 && (
             <Typography color="textSecondary">Aún no hay análisis.</Typography>
           )}
-          {analyses.map((a) => (
-            <Card key={a.id}>
-              <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" mb={1} flexWrap="wrap">
-                  <Chip size="small" label={a.mode ?? 'ACCUMULATOR'} />
-                  <Typography fontWeight={600}>
-                    {a.match
-                      ? `${a.match.homeTeam} vs ${a.match.awayTeam}`
-                      : a.accumulator?.name ?? 'Análisis'}
-                  </Typography>
-                  <Chip size="small" label={a.iaProvider} />
-                  {a.payload && (
-                    <Button
-                      size="small"
-                      onClick={() => setPayload(a.payload as StructuredMatchPayload)}
-                    >
-                      Ver dashboard
+          {analyses.map((a) => {
+            const canDashboard = isMatchDashboardPayload(a.payload);
+            return (
+              <Card key={a.id}>
+                <CardContent>
+                  <Stack direction="row" spacing={1} alignItems="center" mb={1} flexWrap="wrap">
+                    <Chip size="small" label={a.mode ?? 'ACCUMULATOR'} />
+                    <Typography fontWeight={600}>
+                      {a.match
+                        ? `${a.match.homeTeam} vs ${a.match.awayTeam}`
+                        : a.accumulator?.name ?? 'Análisis'}
+                    </Typography>
+                    <Chip size="small" label={a.iaProvider} />
+                    <Button size="small" onClick={() => openHistory(a)}>
+                      {canDashboard ? 'Ver dashboard' : 'Ver resultado'}
                     </Button>
-                  )}
-                </Stack>
-                <Typography variant="body2" color="textSecondary">
-                  Riesgo {a.riskScore} · EV {a.evScore} · Stake {a.recommendedStake}
-                </Typography>
-                {!a.payload && (
-                  <Typography variant="body2" mt={1} component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
-                    {a.response.slice(0, 800)}
+                  </Stack>
+                  <Typography variant="body2" color="textSecondary">
+                    Riesgo {a.riskScore} · EV {a.evScore} · Stake {a.recommendedStake}
                   </Typography>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </Stack>
       )}
     </PageContainer>

@@ -83,6 +83,16 @@ export default function MatchAnalysisDashboard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+
+  if (!payload?.probs || !Array.isArray(payload.markets) || !payload.scoreline) {
+    return (
+      <Alert severity="warning" variant="outlined">
+        Este resultado no es un análisis de partido completo. Usa «Por partido» o «Aleatorio /
+        huecos», o pulsa «Ver resultado» en historial de combinadas.
+      </Alert>
+    );
+  }
+
   const m = payload.match;
   const brief = payload.brief ?? withBrief(payload).brief;
 
