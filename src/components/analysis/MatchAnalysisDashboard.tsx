@@ -27,6 +27,7 @@ import {
   IconQuestionMark,
 } from '@tabler/icons-react';
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
+import { withBrief } from '@/lib/ai/analysis-brief';
 import { sportLabel, teamMonogram, type SportKind } from '@/lib/match-display';
 
 const verdictColor: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
@@ -83,6 +84,7 @@ export default function MatchAnalysisDashboard({
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const m = payload.match;
+  const brief = payload.brief ?? withBrief(payload).brief;
 
   const exportPng = async () => {
     if (!ref.current) return;
@@ -489,11 +491,52 @@ export default function MatchAnalysisDashboard({
             </Box>
           )}
 
-          <Alert severity="info" variant="outlined">
-            {payload.edgeSummary}
-            <br />
-            {payload.disclaimer}
-          </Alert>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 1.5,
+              border: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'grey.50',
+            }}
+          >
+            <Typography fontWeight={700} gutterBottom>
+              {brief?.headline ?? 'Resumen del análisis'}
+            </Typography>
+            <Stack component="ul" spacing={0.75} sx={{ m: 0, pl: 2.5 }}>
+              {(brief?.bullets ?? []).map((b, i) => (
+                <Typography key={i} component="li" variant="body2">
+                  {b}
+                </Typography>
+              ))}
+            </Stack>
+            {brief?.dataSources && (
+              <Box mt={2}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary">
+                  Fuentes usadas
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" gap={0.75} mt={0.5}>
+                  {brief.dataSources.map((s) => (
+                    <Chip key={s} size="small" variant="outlined" label={s} />
+                  ))}
+                </Stack>
+              </Box>
+            )}
+            {brief?.limitations && (
+              <Box mt={1.5}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary">
+                  Limitaciones
+                </Typography>
+                <Stack component="ul" sx={{ m: 0, pl: 2.5 }} spacing={0.25}>
+                  {brief.limitations.map((l, i) => (
+                    <Typography key={i} component="li" variant="caption" color="text.secondary">
+                      {l}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Box>
         </Stack>
       </Box>
     </Stack>

@@ -142,9 +142,9 @@ export default function AnalysesPage() {
 
     const body =
       activeMode === 'MATCH'
-        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: true }
+        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: false }
         : activeMode === 'RANDOM'
-          ? { mode: 'RANDOM', provider, enrich: true }
+          ? { mode: 'RANDOM', provider, enrich: false }
           : activeMode === 'SUGGESTED'
             ? { mode: 'ACCUMULATOR', suggestedId, provider }
             : { mode: 'ACCUMULATOR', accumulatorId, provider };

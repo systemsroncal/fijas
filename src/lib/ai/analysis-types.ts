@@ -62,6 +62,13 @@ export type RelatedMatchRow = {
   tip?: string | null;
 };
 
+export type AnalysisBrief = {
+  headline: string;
+  bullets: string[];
+  dataSources: string[];
+  limitations: string[];
+};
+
 export type StructuredMatchPayload = {
   mode: 'MATCH' | 'RANDOM';
   match?: {
@@ -97,6 +104,7 @@ export type StructuredMatchPayload = {
   proposedAccumulators: ProposedAccumulator[];
   confidence: number;
   edgeSummary: string;
+  brief?: AnalysisBrief;
   disclaimer: string;
   model?: unknown;
 };

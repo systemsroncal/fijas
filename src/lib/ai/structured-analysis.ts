@@ -20,6 +20,7 @@ import type {
   StructuredMatchPayload,
   TeamFormBlock,
 } from '@/lib/ai/analysis-types';
+import { buildAnalysisBrief, sanitizeNarrative } from '@/lib/ai/analysis-brief';
 import { detectSport, formatMarketLabel, isJunkMatch } from '@/lib/match-display';
 
 export type {
@@ -28,6 +29,8 @@ export type {
   ProposedAccumulator,
   StructuredMatchPayload,
 } from '@/lib/ai/analysis-types';
+
+export { buildAnalysisBrief, sanitizeNarrative } from '@/lib/ai/analysis-brief';
 
 function pct(n: number): number {
   return Math.round(n * 1000) / 10;
@@ -173,7 +176,7 @@ export function buildModelPayload(
     )
   );
 
-  return {
+  const payload: StructuredMatchPayload = {
     mode,
     match: {
       id: ctx.id,
@@ -221,16 +224,18 @@ export function buildModelPayload(
     },
     proposedAccumulators: proposed,
     confidence,
-    edgeSummary: `λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}. Mejor edge: ${
+    edgeSummary: `Mejor edge: ${
       formatMarketLabel(
         [...edges].sort((a, b) => b.edge - a.edge)[0]?.market ?? 'N/A',
         [...edges].sort((a, b) => b.edge - a.edge)[0]?.line
       )
-    }. Cuotas de casa: ${bookCount}/${edges.length}.`,
+    }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}.`,
     disclaimer:
-      'Solo datos scrapeados + modelo Poisson. No se inventan marcadores ni props de jugador. Cuotas sin casa = implícitas del modelo.',
+      'Solo datos scrapeados + modelo Poisson. No se inventan marcadores, tiros ni props de jugador. Cuotas sin casa = implícitas del modelo.',
     model: probs,
   };
+  payload.brief = buildAnalysisBrief(payload);
+  return payload;
 }
 
 function extractJson(raw: string): unknown {
@@ -283,13 +288,16 @@ ${JSON.stringify({
         { role: 'user', content: prompt },
       ]);
       const data = extractJson(raw) as { edgeText?: string; confidenceDelta?: number };
+      const cleaned = sanitizeNarrative(data.edgeText, base.edgeSummary);
+      const next: StructuredMatchPayload = {
+        ...base,
+        edgeSummary: cleaned,
+        confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 35, 90),
+        disclaimer: base.disclaimer,
+      };
+      next.brief = buildAnalysisBrief(next);
       return {
-        payload: {
-          ...base,
-          edgeSummary: data.edgeText?.trim() || base.edgeSummary,
-          confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 35, 90),
-          disclaimer: base.disclaimer,
-        },
+        payload: next,
         raw,
         providerUsed: provider,
         promptUsed: prompt,
@@ -395,10 +403,9 @@ export function buildRandomScannerPayload(
     });
   }
 
-  const primary = top[0].payload;
-  return {
-    ...primary,
-    mode: 'RANDOM',
+  const primary = {
+    ...top[0].payload,
+    mode: 'RANDOM' as const,
     relatedMatches,
     markets: top.flatMap((t) =>
       t.payload.markets
@@ -409,11 +416,12 @@ export function buildRandomScannerPayload(
           market: `${t.match.homeTeam} — ${m.market}`,
         }))
     ),
-    proposedAccumulators: [...proposed, ...primary.proposedAccumulators],
-    edgeSummary: `Scanner sobre ${clean.length} partidos válidos. Top edge: ${top[0].bestEdge.toFixed(3)}.`,
+    proposedAccumulators: [...proposed, ...top[0].payload.proposedAccumulators],
+    edgeSummary: `Scanner sobre ${clean.length} partidos válidos. Mejor edge: ${top[0].bestEdge.toFixed(3)}.`,
     confidence: Math.round(
       top.reduce((a, t) => a + t.payload.confidence, 0) / Math.max(top.length, 1)
     ),
-    disclaimer: primary.disclaimer,
   };
+  primary.brief = buildAnalysisBrief(primary);
+  return primary;
 }
