@@ -4,6 +4,7 @@ import {
   predictMatch,
   scanMatchEdges,
 } from '@/lib/ai/football-model';
+import { formatMarketLabel, isJunkMatch } from '@/lib/match-display';
 
 describe('football-model', () => {
   it('poisson pmf sums near 1 for k=0..10', () => {
@@ -30,7 +31,7 @@ describe('football-model', () => {
     expect(p.home).toBeGreaterThan(p.away);
   });
 
-  it('scanMatchEdges produces value or safe candidates', () => {
+  it('scanMatchEdges uses +goles labels', () => {
     const ctx = {
       homeTeam: 'A',
       awayTeam: 'B',
@@ -40,8 +41,21 @@ describe('football-model', () => {
     };
     const probs = predictMatch(ctx);
     const edges = scanMatchEdges(ctx, probs);
-    expect(edges.length).toBeGreaterThan(5);
+    expect(edges.some((e) => e.market.includes('+1.5'))).toBe(true);
+    expect(edges.some((e) => e.market.includes('-2.5'))).toBe(true);
     const { edge } = computeEdge(0.55, 2.2);
     expect(edge).toBeGreaterThan(0);
+  });
+});
+
+describe('match-display', () => {
+  it('filters Time vs Match junk', () => {
+    expect(isJunkMatch('Time', 'Match')).toBe(true);
+    expect(isJunkMatch('CA Cerro Largo', 'Defensor Sporting')).toBe(false);
+  });
+
+  it('formats over/under as +/- ', () => {
+    expect(formatMarketLabel('Over 1.5', '1.5')).toMatch(/^\+1\.5/);
+    expect(formatMarketLabel('Under 2.5', '2.5')).toMatch(/^-2\.5/);
   });
 });

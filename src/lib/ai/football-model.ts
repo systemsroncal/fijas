@@ -35,7 +35,7 @@ export type MarketEdge = {
   edge: number;
   kelly: number;
   verdict: 'value' | 'safe' | 'risky' | 'avoid' | 'neutral';
-  source: 'model';
+  source: 'model' | 'book' | 'implied';
 };
 
 function factorial(n: number): number {
@@ -157,71 +157,40 @@ export function verdictFromEdge(
 }
 
 /**
- * Escanea mercados básicos 1X2 / O/U / BTTS con cuotas disponibles o sintéticas.
+ * Escanea mercados 1X2 / O/U / BTTS.
+ * Si no hay cuota de casa, usa cuota implícita del modelo y la marca `implied` (no inventa casas).
  */
 export function scanMatchEdges(ctx: MatchContext, probs: ModelProbs): MarketEdge[] {
-  const synth = (p: number) => Math.max(1.15, Math.round((1 / Math.max(p, 0.05)) * 100) / 100);
-  const rows: Array<{ market: string; line: string | null; odds: number; modelProb: number }> = [
-    {
-      market: '1X2 Local',
-      line: null,
-      odds: ctx.oddsHome && ctx.oddsHome > 1 ? ctx.oddsHome : synth(probs.home),
-      modelProb: probs.home,
-    },
-    {
-      market: '1X2 Empate',
-      line: null,
-      odds: ctx.oddsDraw && ctx.oddsDraw > 1 ? ctx.oddsDraw : synth(probs.draw),
-      modelProb: probs.draw,
-    },
-    {
-      market: '1X2 Visitante',
-      line: null,
-      odds: ctx.oddsAway && ctx.oddsAway > 1 ? ctx.oddsAway : synth(probs.away),
-      modelProb: probs.away,
-    },
-    {
-      market: 'Over 1.5',
-      line: '1.5',
-      odds: ctx.oddsOver && ctx.oddsOver > 1 ? ctx.oddsOver : synth(probs.over15),
-      modelProb: probs.over15,
-    },
-    {
-      market: 'Over 2.5',
-      line: '2.5',
-      odds: synth(probs.over25),
-      modelProb: probs.over25,
-    },
-    {
-      market: 'Under 2.5',
-      line: '2.5',
-      odds: ctx.oddsUnder && ctx.oddsUnder > 1 ? ctx.oddsUnder : synth(1 - probs.over25),
-      modelProb: 1 - probs.over25,
-    },
-    {
-      market: 'BTTS Sí',
-      line: null,
-      odds: synth(probs.bttsYes),
-      modelProb: probs.bttsYes,
-    },
-    {
-      market: 'BTTS No',
-      line: null,
-      odds: synth(1 - probs.bttsYes),
-      modelProb: 1 - probs.bttsYes,
-    },
-    {
-      market: 'AH Local -0.5',
-      line: '-0.5',
-      odds: synth(probs.home),
-      modelProb: probs.home,
-    },
-    {
-      market: 'AH Visitante +0.5',
-      line: '+0.5',
-      odds: synth(1 - probs.home),
-      modelProb: 1 - probs.home,
-    },
+  const impliedOdds = (p: number) =>
+    Math.max(1.15, Math.round((1 / Math.max(p, 0.05)) * 100) / 100);
+
+  const row = (
+    market: string,
+    line: string | null,
+    bookOdds: number | null | undefined,
+    modelProb: number
+  ) => {
+    const hasBook = bookOdds != null && bookOdds > 1;
+    return {
+      market,
+      line,
+      odds: hasBook ? Number(bookOdds) : impliedOdds(modelProb),
+      modelProb,
+      source: (hasBook ? 'book' : 'implied') as 'book' | 'implied',
+    };
+  };
+
+  const rows = [
+    row('1X2 Local', null, ctx.oddsHome, probs.home),
+    row('1X2 Empate', null, ctx.oddsDraw, probs.draw),
+    row('1X2 Visitante', null, ctx.oddsAway, probs.away),
+    row('+1.5 goles', '1.5', ctx.oddsOver, probs.over15),
+    row('+2.5 goles', '2.5', null, probs.over25),
+    row('-2.5 goles', '2.5', ctx.oddsUnder, 1 - probs.over25),
+    row('BTTS Sí', null, null, probs.bttsYes),
+    row('BTTS No', null, null, 1 - probs.bttsYes),
+    row('AH Local -0.5', '-0.5', null, probs.home),
+    row('AH Visitante +0.5', '+0.5', null, 1 - probs.home),
   ];
 
   return rows.map((r) => {
@@ -235,7 +204,7 @@ export function scanMatchEdges(ctx: MatchContext, probs: ModelProbs): MarketEdge
       edge,
       kelly,
       verdict: verdictFromEdge(edge, r.modelProb),
-      source: 'model' as const,
+      source: r.source,
     };
   });
 }
@@ -260,19 +229,20 @@ export function topScorelines(
 }
 
 export function expectedCornersCards(probs: ModelProbs): {
-  cornersHome: number;
-  cornersAway: number;
-  cardsHome: number;
-  cardsAway: number;
+  cornersHome: number | null;
+  cornersAway: number | null;
+  cardsHome: number | null;
+  cardsAway: number | null;
   xgHome: number;
   xgAway: number;
 } {
+  // Solo xG del modelo Poisson (λ). Córners/tarjetas no se inventan sin historial real.
   return {
     xgHome: Math.round(probs.lambdaHome * 100) / 100,
     xgAway: Math.round(probs.lambdaAway * 100) / 100,
-    cornersHome: Math.round((4.8 + probs.lambdaHome * 0.7) * 10) / 10,
-    cornersAway: Math.round((4.2 + probs.lambdaAway * 0.7) * 10) / 10,
-    cardsHome: Math.round((2.1 + (1 - probs.home) * 0.8) * 10) / 10,
-    cardsAway: Math.round((2.2 + (1 - probs.away) * 0.8) * 10) / 10,
+    cornersHome: null,
+    cornersAway: null,
+    cardsHome: null,
+    cardsAway: null,
   };
 }

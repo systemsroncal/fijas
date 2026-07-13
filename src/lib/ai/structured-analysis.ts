@@ -16,8 +16,11 @@ import type {
   AnalysisMarket,
   AnalysisPick,
   ProposedAccumulator,
+  RelatedMatchRow,
   StructuredMatchPayload,
+  TeamFormBlock,
 } from '@/lib/ai/analysis-types';
+import { detectSport, formatMarketLabel, isJunkMatch } from '@/lib/match-display';
 
 export type {
   AnalysisMarket,
@@ -30,38 +33,62 @@ function pct(n: number): number {
   return Math.round(n * 1000) / 10;
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
 function edgeToMarket(e: MarketEdge): AnalysisMarket {
   return {
-    market: e.market,
+    market: formatMarketLabel(e.market, e.line),
     line: e.line,
     odds: e.odds,
     aiProb: pct(e.modelProb),
     edge: Math.round(e.edge * 1000) / 1000,
     verdict: e.verdict,
-    source: 'model',
+    source: e.source === 'book' ? 'book' : e.source === 'implied' ? 'implied' : 'model',
   };
 }
 
 function pickFromEdge(e: MarketEdge, rationale: string): AnalysisPick {
   return {
-    market: e.market,
+    market: formatMarketLabel(e.market, e.line),
     odds: e.odds,
     aiProb: pct(e.modelProb),
     rationale,
   };
 }
 
+export function emptyForm(message?: string): TeamFormBlock {
+  return {
+    available: false,
+    message:
+      message ??
+      'Sin marcadores históricos en la base. No se inventan resultados de los últimos partidos.',
+    recentScores: [],
+    avgGoalsFor: null,
+    avgGoalsAgainst: null,
+    avgGoalsTotal: null,
+    cardsTotal: null,
+    avgCards: null,
+    sampleSize: 0,
+    rows: [],
+  };
+}
+
 /**
- * Construye payload base con Poisson + scanner (sin LLM).
+ * Construye payload base con Poisson + scanner (sin LLM inventando props).
  */
 export function buildModelPayload(
   ctx: MatchContext & { id?: string },
-  mode: 'MATCH' | 'RANDOM' = 'MATCH'
+  mode: 'MATCH' | 'RANDOM' = 'MATCH',
+  extras?: { form?: TeamFormBlock; relatedMatches?: RelatedMatchRow[] }
 ): StructuredMatchPayload {
   const probs = predictMatch(ctx);
   const edges = scanMatchEdges(ctx, probs);
   const scores = topScorelines(probs.lambdaHome, probs.lambdaAway, 4);
-  const expected = expectedCornersCards(probs);
+  const expectedRaw = expectedCornersCards(probs);
+  const sport = detectSport(ctx.league);
+  const form = extras?.form ?? emptyForm();
 
   const value = edges.find((e) => e.verdict === 'value') ?? null;
   const safe =
@@ -84,31 +111,33 @@ export function buildModelPayload(
       totalOdds: safe.odds,
       legs: [
         {
+          matchId: ctx.id,
           matchLabel: label,
-          market: safe.market,
-          betChoice: safe.market,
+          market: formatMarketLabel(safe.market, safe.line),
+          betChoice: formatMarketLabel(safe.market, safe.line),
           odds: safe.odds,
         },
       ],
     });
   }
   if (value && safe && value.market !== safe.market) {
-    const total = Math.round(safe.odds * value.odds * 1000) / 1000;
     proposed.push({
       title: `Value SGP · ${label}`,
       riskTier: 'value',
-      totalOdds: total,
+      totalOdds: Math.round(safe.odds * value.odds * 1000) / 1000,
       legs: [
         {
+          matchId: ctx.id,
           matchLabel: label,
-          market: safe.market,
-          betChoice: safe.market,
+          market: formatMarketLabel(safe.market, safe.line),
+          betChoice: formatMarketLabel(safe.market, safe.line),
           odds: safe.odds,
         },
         {
+          matchId: ctx.id,
           matchLabel: label,
-          market: value.market,
-          betChoice: value.market,
+          market: formatMarketLabel(value.market, value.line),
+          betChoice: formatMarketLabel(value.market, value.line),
           odds: value.odds,
         },
       ],
@@ -121,23 +150,26 @@ export function buildModelPayload(
       totalOdds: risky.odds,
       legs: [
         {
+          matchId: ctx.id,
           matchLabel: label,
-          market: risky.market,
-          betChoice: risky.market,
+          market: formatMarketLabel(risky.market, risky.line),
+          betChoice: formatMarketLabel(risky.market, risky.line),
           odds: risky.odds,
         },
       ],
     });
   }
 
+  const bookCount = edges.filter((e) => e.source === 'book').length;
   const confidence = Math.round(
     clamp(
-      55 +
-        (value ? 12 : 0) +
-        (safe ? 10 : 0) +
-        Math.max(...edges.map((e) => e.edge)) * 40,
-      40,
-      92
+      45 +
+        bookCount * 4 +
+        (value ? 10 : 0) +
+        (safe ? 8 : 0) +
+        Math.max(...edges.map((e) => e.edge), 0) * 30,
+      35,
+      88
     )
   );
 
@@ -149,6 +181,9 @@ export function buildModelPayload(
       awayTeam: ctx.awayTeam,
       league: ctx.league,
       tip: ctx.tip ?? null,
+      sport,
+      homeCrestUrl: null,
+      awayCrestUrl: null,
     },
     probs: {
       home: pct(probs.home),
@@ -158,36 +193,44 @@ export function buildModelPayload(
     scoreline: {
       mostLikely: `${scores[0].home}-${scores[0].away}`,
       alternatives: scores.slice(1).map((s) => `${s.home}-${s.away}`),
+      source: 'model',
     },
-    expected,
+    expected: {
+      xgHome: expectedRaw.xgHome,
+      xgAway: expectedRaw.xgAway,
+      cornersHome: null,
+      cornersAway: null,
+      cardsHome: form.avgCards,
+      cardsAway: null,
+      note: form.available
+        ? 'xG del modelo Poisson; medias de goles/tarjetas solo con historial scrapeado.'
+        : 'xG del modelo Poisson. Sin córners/tarjetas inventados.',
+    },
+    form,
+    relatedMatches: extras?.relatedMatches ?? [],
     markets: edges.map(edgeToMarket),
     picks: {
       value: value
-        ? pickFromEdge(value, 'Hueco positivo vs cuota implícita (modelo Poisson).')
+        ? pickFromEdge(value, 'Edge positivo vs cuota (casa o implícita del modelo).')
         : null,
-      safe: safe
-        ? pickFromEdge(safe, 'Alta probabilidad modelo con edge no negativo.')
-        : null,
-      risky: risky
-        ? pickFromEdge(risky, 'Cuota atractiva; mayor varianza.')
-        : null,
+      safe: safe ? pickFromEdge(safe, 'Alta probabilidad modelo con edge no negativo.') : null,
+      risky: risky ? pickFromEdge(risky, 'Cuota alta; mayor varianza.') : null,
       avoid: avoid
-        ? pickFromEdge(avoid, 'Probabilidad modelo claramente por debajo de la implícita.')
+        ? pickFromEdge(avoid, 'Probabilidad modelo por debajo de la implícita.')
         : null,
     },
     proposedAccumulators: proposed,
     confidence,
     edgeSummary: `λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}. Mejor edge: ${
-      [...edges].sort((a, b) => b.edge - a.edge)[0]?.market ?? 'N/A'
-    }.`,
+      formatMarketLabel(
+        [...edges].sort((a, b) => b.edge - a.edge)[0]?.market ?? 'N/A',
+        [...edges].sort((a, b) => b.edge - a.edge)[0]?.line
+      )
+    }. Cuotas de casa: ${bookCount}/${edges.length}.`,
     disclaimer:
-      'Modelo Poisson + tips scrapeados. Mercados de props (tiros/jugador) pueden enriquecerse con IA y son estimados.',
+      'Solo datos scrapeados + modelo Poisson. No se inventan marcadores ni props de jugador. Cuotas sin casa = implícitas del modelo.',
     model: probs,
   };
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, n));
 }
 
 function extractJson(raw: string): unknown {
@@ -197,31 +240,29 @@ function extractJson(raw: string): unknown {
 }
 
 /**
- * Enriquece el payload con props LLM (tiros, tarjetas, goleador, etc.).
+ * LLM solo narra el edge; no añade mercados/props inventados.
  */
 export async function enrichPayloadWithLlm(
   preferred: AiProvider,
   keysByProvider: Partial<Record<AiProvider, string>>,
   base: StructuredMatchPayload
-): Promise<{ payload: StructuredMatchPayload; raw: string; providerUsed: AiProvider; promptUsed: string }> {
-  const prompt = `Eres analista de apuestas de fútbol. Dado este análisis base (Poisson), enriquece SOLO con JSON válido:
-{
-  "extraMarkets": [{"market":"string","line":"string|null","odds":number,"aiProb":number,"edge":number,"verdict":"value|safe|risky|avoid|neutral"}],
-  "playerProps": [{"market":"string","odds":number,"aiProb":number,"rationale":"string"}],
-  "shots": {"totalHome":number,"totalAway":number,"onTargetHome":number,"onTargetAway":number,"note":"string"},
-  "edgeText": "string corto",
-  "confidenceDelta": number
-}
-Incluye mercados de: córners, tarjetas, tiros totales/a puerta, handicap asiático, goleador/asistencia si es razonable.
-No inventes cuotas absurdas (1.01-8.0). Marca props como estimados.
+): Promise<{
+  payload: StructuredMatchPayload;
+  raw: string;
+  providerUsed: AiProvider;
+  promptUsed: string;
+}> {
+  const prompt = `Eres analista de apuestas. NO inventes mercados, jugadores, cuotas ni estadísticas.
+Solo responde JSON: {"edgeText":"comentario corto basado SOLO en los datos dados","confidenceDelta":0}
+Si faltan datos, dilo. Prohibido inventar.
 
-Base:
+Datos:
 ${JSON.stringify({
     match: base.match,
     probs: base.probs,
     scoreline: base.scoreline,
-    expected: base.expected,
-    topMarkets: base.markets.slice(0, 8),
+    form: base.form,
+    markets: base.markets.slice(0, 10),
   })}`;
 
   const order: AiProvider[] = [
@@ -235,59 +276,30 @@ ${JSON.stringify({
     if (!key) continue;
     try {
       const raw = await callProvider(provider, key, [
-        { role: 'system', content: 'Responde únicamente JSON válido sin markdown.' },
+        {
+          role: 'system',
+          content: 'JSON válido únicamente. Cero invención de datos.',
+        },
         { role: 'user', content: prompt },
       ]);
-      const data = extractJson(raw) as {
-        extraMarkets?: AnalysisMarket[];
-        playerProps?: AnalysisPick[];
-        shots?: StructuredMatchPayload extends never ? never : Record<string, unknown>;
-        edgeText?: string;
-        confidenceDelta?: number;
+      const data = extractJson(raw) as { edgeText?: string; confidenceDelta?: number };
+      return {
+        payload: {
+          ...base,
+          edgeSummary: data.edgeText?.trim() || base.edgeSummary,
+          confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 35, 90),
+          disclaimer: base.disclaimer,
+        },
+        raw,
+        providerUsed: provider,
+        promptUsed: prompt,
       };
-
-      const extra = (data.extraMarkets ?? []).map((m) => ({
-        ...m,
-        source: 'estimated' as const,
-        line: m.line ?? null,
-        odds: Number(m.odds) || 1.8,
-        aiProb: Number(m.aiProb) || 40,
-        edge: Number(m.edge) || 0,
-        verdict: m.verdict || 'neutral',
-      }));
-
-      const payload: StructuredMatchPayload = {
-        ...base,
-        markets: [...base.markets, ...extra],
-        edgeSummary: data.edgeText || base.edgeSummary,
-        confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 35, 95),
-        disclaimer:
-          'Híbrido: Poisson (modelo) + props LLM estimados. No es consejo financiero.',
-      };
-
-      if (data.playerProps?.[0] && !payload.picks.risky) {
-        payload.picks.risky = {
-          market: data.playerProps[0].market,
-          odds: Number(data.playerProps[0].odds) || 3,
-          aiProb: Number(data.playerProps[0].aiProb) || 30,
-          rationale: data.playerProps[0].rationale || 'Prop estimado por IA',
-        };
-      }
-
-      if (data.shots) {
-        payload.edgeSummary += ` | Tiros est.: ${JSON.stringify(data.shots)}`;
-      }
-
-      return { payload, raw, providerUsed: provider, promptUsed: prompt };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
     }
   }
 
-  // Sin LLM: devolver base
-  if (lastError && Object.keys(keysByProvider).length === 0) {
-    throw lastError;
-  }
+  if (lastError && Object.keys(keysByProvider).length === 0) throw lastError;
   return {
     payload: base,
     raw: JSON.stringify(base),
@@ -297,35 +309,59 @@ ${JSON.stringify({
 }
 
 /**
- * Scanner aleatorio: varios partidos → mejores huecos → combinadas propuestas.
+ * Scanner aleatorio sobre partidos reales (filtra basura Time/Match).
  */
 export function buildRandomScannerPayload(
   matches: Array<MatchContext & { id?: string }>
 ): StructuredMatchPayload {
-  const scored = matches.map((m) => {
+  const clean = matches.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam));
+  if (clean.length === 0) {
+    const empty = buildModelPayload(
+      { homeTeam: 'N/A', awayTeam: 'N/A', league: 'N/A' },
+      'RANDOM'
+    );
+    return {
+      ...empty,
+      edgeSummary: 'No hay partidos válidos (se filtraron cabeceras/basura del scraper).',
+      relatedMatches: [],
+      proposedAccumulators: [],
+      markets: [],
+    };
+  }
+
+  const scored = clean.map((m) => {
     const payload = buildModelPayload(m, 'RANDOM');
     const bestEdge = Math.max(...payload.markets.map((x) => x.edge), -1);
     return { payload, bestEdge, match: m };
   });
   scored.sort((a, b) => b.bestEdge - a.bestEdge);
-  const top = scored.slice(0, 5);
+  const top = scored.slice(0, 8);
+
+  const relatedMatches: RelatedMatchRow[] = top.map((t) => ({
+    id: t.match.id ?? '',
+    homeTeam: t.match.homeTeam,
+    awayTeam: t.match.awayTeam,
+    league: t.match.league,
+    tip: t.match.tip ?? null,
+  }));
 
   const safeLegs = top
-    .map((t) => t.payload.picks.safe)
-    .filter(Boolean)
-    .slice(0, 3) as AnalysisPick[];
+    .map((t) => ({ pick: t.payload.picks.safe, m: t.match }))
+    .filter((x) => x.pick)
+    .slice(0, 3);
   const valueLegs = top
-    .map((t) => t.payload.picks.value)
-    .filter(Boolean)
-    .slice(0, 2) as AnalysisPick[];
+    .map((t) => ({ pick: t.payload.picks.value, m: t.match }))
+    .filter((x) => x.pick)
+    .slice(0, 2);
 
   const proposed: ProposedAccumulator[] = [];
   if (safeLegs.length >= 2) {
-    const legs = safeLegs.map((p, i) => ({
-      matchLabel: `${top[i].match.homeTeam} vs ${top[i].match.awayTeam}`,
-      market: p.market,
-      betChoice: p.market,
-      odds: p.odds,
+    const legs = safeLegs.map((x) => ({
+      matchId: x.m.id,
+      matchLabel: `${x.m.homeTeam} vs ${x.m.awayTeam}`,
+      market: x.pick!.market,
+      betChoice: x.pick!.market,
+      odds: x.pick!.odds,
     }));
     proposed.push({
       title: 'Combinada segura (multi)',
@@ -337,16 +373,18 @@ export function buildRandomScannerPayload(
   if (valueLegs.length >= 1 && safeLegs.length >= 1) {
     const legs = [
       {
-        matchLabel: `${top[0].match.homeTeam} vs ${top[0].match.awayTeam}`,
-        market: safeLegs[0].market,
-        betChoice: safeLegs[0].market,
-        odds: safeLegs[0].odds,
+        matchId: safeLegs[0].m.id,
+        matchLabel: `${safeLegs[0].m.homeTeam} vs ${safeLegs[0].m.awayTeam}`,
+        market: safeLegs[0].pick!.market,
+        betChoice: safeLegs[0].pick!.market,
+        odds: safeLegs[0].pick!.odds,
       },
       {
-        matchLabel: `${top[1]?.match.homeTeam ?? top[0].match.homeTeam} vs ${top[1]?.match.awayTeam ?? top[0].match.awayTeam}`,
-        market: valueLegs[0].market,
-        betChoice: valueLegs[0].market,
-        odds: valueLegs[0].odds,
+        matchId: valueLegs[0].m.id,
+        matchLabel: `${valueLegs[0].m.homeTeam} vs ${valueLegs[0].m.awayTeam}`,
+        market: valueLegs[0].pick!.market,
+        betChoice: valueLegs[0].pick!.market,
+        odds: valueLegs[0].pick!.odds,
       },
     ];
     proposed.push({
@@ -357,36 +395,25 @@ export function buildRandomScannerPayload(
     });
   }
 
-  const primary = top[0]?.payload;
-  if (!primary) {
-    return buildModelPayload(
-      {
-        homeTeam: 'N/A',
-        awayTeam: 'N/A',
-        league: 'N/A',
-      },
-      'RANDOM'
-    );
-  }
-
+  const primary = top[0].payload;
   return {
     ...primary,
     mode: 'RANDOM',
+    relatedMatches,
     markets: top.flatMap((t) =>
       t.payload.markets
         .filter((m) => m.verdict === 'value' || m.verdict === 'safe')
-        .slice(0, 3)
+        .slice(0, 2)
         .map((m) => ({
           ...m,
           market: `${t.match.homeTeam} — ${m.market}`,
         }))
     ),
     proposedAccumulators: [...proposed, ...primary.proposedAccumulators],
-    edgeSummary: `Scanner sobre ${matches.length} partidos. Top edge: ${top[0]?.bestEdge.toFixed(3)}.`,
+    edgeSummary: `Scanner sobre ${clean.length} partidos válidos. Top edge: ${top[0].bestEdge.toFixed(3)}.`,
     confidence: Math.round(
       top.reduce((a, t) => a + t.payload.confidence, 0) / Math.max(top.length, 1)
     ),
-    disclaimer:
-      'Scanner aleatorio híbrido (Poisson + tips). Props de jugador requieren enriquecimiento IA.',
+    disclaimer: primary.disclaimer,
   };
 }

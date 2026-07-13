@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     take: 200,
   });
 
-  const junk = /^(time|match|date|good|bad|league|home|away|vs|tbd|n\/?a|-|—)$/i;
+  const junk = /^(time|match|date|good|bad|league|home|away|vs|tbd|n\/?a|-|—|team|score|result|odds|tip)$/i;
   const filtered = matches.filter(
     (m) => !junk.test(m.homeTeam.trim()) && !junk.test(m.awayTeam.trim())
   );

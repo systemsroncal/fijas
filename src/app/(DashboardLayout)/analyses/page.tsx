@@ -113,31 +113,39 @@ export default function AnalysesPage() {
     refresh();
   }, []);
 
-  const run = async () => {
+  const run = async (override?: { mode?: Mode; matchId?: string }) => {
     setError(null);
     setResultMsg(null);
     setPayload(null);
 
-    if (mode === 'MATCH' && !matchId) {
+    const activeMode = override?.mode ?? mode;
+    const activeMatchId = override?.matchId ?? matchId;
+
+    if (activeMode === 'MATCH' && !activeMatchId) {
       setError('Selecciona un partido');
       return;
     }
-    if (mode === 'ACCUMULATOR' && !accumulatorId) {
+    if (activeMode === 'ACCUMULATOR' && !accumulatorId) {
       setError('Selecciona una combinada creada');
       return;
     }
-    if (mode === 'SUGGESTED' && !suggestedId) {
+    if (activeMode === 'SUGGESTED' && !suggestedId) {
       setError('Selecciona una combinada sugerida');
       return;
     }
 
     setRunning(true);
+    if (override?.matchId) {
+      setMode('MATCH');
+      setMatchId(override.matchId);
+    }
+
     const body =
-      mode === 'MATCH'
-        ? { mode: 'MATCH', matchId, provider, enrich: true }
-        : mode === 'RANDOM'
+      activeMode === 'MATCH'
+        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: true }
+        : activeMode === 'RANDOM'
           ? { mode: 'RANDOM', provider, enrich: true }
-          : mode === 'SUGGESTED'
+          : activeMode === 'SUGGESTED'
             ? { mode: 'ACCUMULATOR', suggestedId, provider }
             : { mode: 'ACCUMULATOR', accumulatorId, provider };
 
@@ -166,6 +174,10 @@ export default function AnalysesPage() {
       );
     }
     refresh();
+  };
+
+  const analyzeMatchById = (id: string) => {
+    void run({ mode: 'MATCH', matchId: id });
   };
 
   return (
@@ -263,9 +275,9 @@ export default function AnalysesPage() {
                   </MenuItem>
                 ))}
               </TextField>
-              <Button variant="contained" onClick={run} disabled={running}>
-                {running ? <CircularProgress size={22} /> : 'Analizar'}
-              </Button>
+            <Button variant="contained" onClick={() => run()} disabled={running}>
+              {running ? <CircularProgress size={22} /> : 'Analizar'}
+            </Button>
             </Stack>
           </Stack>
           {error && (
@@ -283,7 +295,7 @@ export default function AnalysesPage() {
 
       {payload && (
         <Box mb={3}>
-          <MatchAnalysisDashboard payload={payload} />
+          <MatchAnalysisDashboard payload={payload} onAnalyzeMatch={analyzeMatchById} />
         </Box>
       )}
 

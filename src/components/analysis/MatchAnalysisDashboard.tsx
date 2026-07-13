@@ -3,11 +3,11 @@
 import { useRef, useState } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
+  Divider,
   LinearProgress,
   Stack,
   Table,
@@ -17,7 +17,17 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import {
+  IconBallAmericanFootball,
+  IconBallBasketball,
+  IconBallFootball,
+  IconBallVolleyball,
+  IconBallTennis,
+  IconDeviceGamepad2,
+  IconQuestionMark,
+} from '@tabler/icons-react';
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
+import { sportLabel, teamMonogram, type SportKind } from '@/lib/match-display';
 
 const verdictColor: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
   value: 'success',
@@ -27,16 +37,52 @@ const verdictColor: Record<string, 'success' | 'warning' | 'error' | 'default' |
   neutral: 'default',
 };
 
+function SportIcon({ sport }: { sport?: string }) {
+  const s = (sport ?? 'football') as SportKind;
+  const props = { size: 18, stroke: 1.75 };
+  if (s === 'basketball') return <IconBallBasketball {...props} />;
+  if (s === 'american_football') return <IconBallAmericanFootball {...props} />;
+  if (s === 'volleyball') return <IconBallVolleyball {...props} />;
+  if (s === 'tennis') return <IconBallTennis {...props} />;
+  if (s === 'esports') return <IconDeviceGamepad2 {...props} />;
+  if (s === 'other') return <IconQuestionMark {...props} />;
+  return <IconBallFootball {...props} />;
+}
+
+function TeamBadge({
+  name,
+  crestUrl,
+}: {
+  name: string;
+  crestUrl?: string | null;
+}) {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center">
+      <Avatar
+        src={crestUrl || undefined}
+        alt={name}
+        sx={{ width: 36, height: 36, fontSize: 13, bgcolor: 'primary.main', fontWeight: 700 }}
+      >
+        {!crestUrl ? teamMonogram(name) : null}
+      </Avatar>
+      <Typography fontWeight={700}>{name}</Typography>
+    </Stack>
+  );
+}
+
 /**
- * Dashboard de análisis por partido / scanner (exportable a PNG).
+ * Dashboard de análisis — estilo producto Modernize (sin panel “IA oscuro”).
  */
 export default function MatchAnalysisDashboard({
   payload,
+  onAnalyzeMatch,
 }: {
   payload: StructuredMatchPayload;
+  onAnalyzeMatch?: (matchId: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const m = payload.match;
 
   const exportPng = async () => {
     if (!ref.current) return;
@@ -46,12 +92,10 @@ export default function MatchAnalysisDashboard({
       const dataUrl = await toPng(ref.current, {
         cacheBust: true,
         pixelRatio: 2,
-        backgroundColor: '#0b1220',
+        backgroundColor: '#ffffff',
       });
       const a = document.createElement('a');
-      const name = payload.match
-        ? `${payload.match.homeTeam}-vs-${payload.match.awayTeam}`
-        : 'analisis';
+      const name = m ? `${m.homeTeam}-vs-${m.awayTeam}` : 'analisis';
       a.download = `${name.replace(/\s+/g, '_')}-analisis.png`;
       a.href = dataUrl;
       a.click();
@@ -62,12 +106,10 @@ export default function MatchAnalysisDashboard({
     }
   };
 
-  const m = payload.match;
-
   return (
     <Stack spacing={2}>
       <Stack direction="row" justifyContent="flex-end">
-        <Button variant="outlined" onClick={exportPng} disabled={exporting}>
+        <Button variant="outlined" size="small" onClick={exportPng} disabled={exporting}>
           {exporting ? 'Exportando…' : 'Exportar PNG'}
         </Button>
       </Stack>
@@ -75,192 +117,379 @@ export default function MatchAnalysisDashboard({
       <Box
         ref={ref}
         sx={{
-          p: 2,
+          p: { xs: 2, md: 3 },
           borderRadius: 2,
-          bgcolor: '#0b1220',
-          color: '#e8eef7',
-          border: '1px solid #1e2a3f',
+          bgcolor: 'background.paper',
+          border: '1px solid',
+          borderColor: 'divider',
         }}
       >
-        <Stack spacing={2}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+        <Stack spacing={2.5}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            justifyContent="space-between"
+            alignItems={{ sm: 'flex-start' }}
+            spacing={2}
+          >
             <Box>
-              <Typography variant="overline" sx={{ opacity: 0.7 }}>
-                {m?.league ?? 'Scanner'} · {payload.mode}
-              </Typography>
-              <Typography variant="h5" fontWeight={800}>
-                {m ? `${m.homeTeam} vs ${m.awayTeam}` : 'Análisis aleatorio'}
-              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                <SportIcon sport={m?.sport} />
+                <Typography variant="overline" color="text.secondary">
+                  {sportLabel((m?.sport as SportKind) ?? 'football')} · {m?.league ?? 'Scanner'} ·{' '}
+                  {payload.mode}
+                </Typography>
+              </Stack>
+              {m && m.homeTeam !== 'N/A' ? (
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={2}
+                  alignItems={{ md: 'center' }}
+                >
+                  <TeamBadge name={m.homeTeam} crestUrl={m.homeCrestUrl} />
+                  <Typography color="text.secondary" fontWeight={600}>
+                    vs
+                  </Typography>
+                  <TeamBadge name={m.awayTeam} crestUrl={m.awayCrestUrl} />
+                </Stack>
+              ) : (
+                <Typography variant="h5" fontWeight={700}>
+                  Scanner de huecos
+                </Typography>
+              )}
               {m?.tip && (
-                <Chip size="small" label={`Tip scrapeado: ${m.tip}`} sx={{ mt: 1 }} color="primary" />
+                <Chip size="small" label={`Tip scrapeado: ${m.tip}`} sx={{ mt: 1.5 }} color="primary" />
               )}
             </Box>
-            <Box textAlign="center">
-              <Typography variant="caption" display="block">
+            <Box
+              sx={{
+                minWidth: 88,
+                textAlign: 'center',
+                px: 1.5,
+                py: 1,
+                borderRadius: 2,
+                bgcolor: 'action.hover',
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
                 Confianza
               </Typography>
-              <Typography variant="h4" fontWeight={800} color="primary.light">
+              <Typography variant="h4" fontWeight={800} color="primary.main" lineHeight={1.1}>
                 {payload.confidence}
               </Typography>
-              <Typography variant="caption">/ 100</Typography>
+              <Typography variant="caption" color="text.secondary">
+                / 100
+              </Typography>
             </Box>
           </Stack>
 
-          <Card sx={{ bgcolor: '#121a2b' }}>
-            <CardContent>
-              <Typography fontWeight={700} gutterBottom>
-                Probabilidades IA (modelo)
-              </Typography>
-              <Stack spacing={1}>
-                {(
-                  [
-                    ['Local', payload.probs.home],
-                    ['Empate', payload.probs.draw],
-                    ['Visitante', payload.probs.away],
-                  ] as const
-                ).map(([label, v]) => (
-                  <Box key={label}>
-                    <Stack direction="row" justifyContent="space-between">
-                      <Typography variant="body2">{label}</Typography>
-                      <Typography variant="body2" fontWeight={700}>
-                        {v}%
-                      </Typography>
-                    </Stack>
-                    <LinearProgress
-                      variant="determinate"
-                      value={Math.min(100, v)}
-                      sx={{ height: 8, borderRadius: 1 }}
-                    />
-                  </Box>
-                ))}
-              </Stack>
-              <Typography mt={2} variant="body2">
-                Marcador más probable:{' '}
-                <strong>{payload.scoreline.mostLikely}</strong>
-                {payload.scoreline.alternatives.length > 0 &&
-                  ` · Alt: ${payload.scoreline.alternatives.join(', ')}`}
-              </Typography>
-            </CardContent>
-          </Card>
+          <Divider />
 
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
+          <Box>
+            <Typography fontWeight={700} gutterBottom>
+              Probabilidades (modelo Poisson)
+            </Typography>
+            <Stack spacing={1}>
+              {(
+                [
+                  ['Local', payload.probs.home],
+                  ['Empate', payload.probs.draw],
+                  ['Visitante', payload.probs.away],
+                ] as const
+              ).map(([label, v]) => (
+                <Box key={label}>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="body2">{label}</Typography>
+                    <Typography variant="body2" fontWeight={700}>
+                      {v}%
+                    </Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(100, v)}
+                    sx={{ height: 7, borderRadius: 1 }}
+                  />
+                </Box>
+              ))}
+            </Stack>
+            <Typography mt={1.5} variant="body2" color="text.secondary">
+              Marcador modelo más probable: <strong>{payload.scoreline.mostLikely}</strong>
+              {payload.scoreline.alternatives.length > 0 &&
+                ` · Alt: ${payload.scoreline.alternatives.join(', ')}`}
+              <Chip size="small" label="modelo" sx={{ ml: 1 }} />
+            </Typography>
+          </Box>
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
             {[
-              ['xG', `${payload.expected.xgHome} | ${payload.expected.xgAway}`],
-              ['Córners', `${payload.expected.cornersHome} | ${payload.expected.cornersAway}`],
-              ['Tarjetas', `${payload.expected.cardsHome} | ${payload.expected.cardsAway}`],
+              ['xG modelo', `${payload.expected.xgHome ?? '—'} | ${payload.expected.xgAway ?? '—'}`],
+              [
+                'Goles medios (hist.)',
+                payload.form?.avgGoalsTotal != null ? String(payload.form.avgGoalsTotal) : '—',
+              ],
+              [
+                'Tarjetas medias',
+                payload.form?.avgCards != null ? String(payload.form.avgCards) : '—',
+              ],
             ].map(([k, v]) => (
-              <Card key={k} sx={{ flex: 1, bgcolor: '#121a2b' }}>
-                <CardContent>
-                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                    {k} esp.
-                  </Typography>
-                  <Typography fontWeight={700}>{v}</Typography>
-                </CardContent>
-              </Card>
+              <Box
+                key={k}
+                sx={{
+                  flex: 1,
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  bgcolor: 'grey.50',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  {k}
+                </Typography>
+                <Typography fontWeight={700}>{v}</Typography>
+              </Box>
             ))}
           </Stack>
+          <Typography variant="caption" color="text.secondary">
+            {payload.expected.note}
+          </Typography>
 
-          <Card sx={{ bgcolor: '#121a2b' }}>
-            <CardContent sx={{ overflowX: 'auto' }}>
-              <Typography fontWeight={700} gutterBottom>
-                Mercados principales
-              </Typography>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ color: '#9fb0c9' }}>Mercado</TableCell>
-                    <TableCell sx={{ color: '#9fb0c9' }}>Cuota</TableCell>
-                    <TableCell sx={{ color: '#9fb0c9' }}>Prob IA</TableCell>
-                    <TableCell sx={{ color: '#9fb0c9' }}>Edge</TableCell>
-                    <TableCell sx={{ color: '#9fb0c9' }}>Veredicto</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {payload.markets.slice(0, 16).map((row, i) => (
-                    <TableRow key={`${row.market}-${i}`}>
-                      <TableCell sx={{ color: '#e8eef7' }}>
-                        {row.market}
-                        {row.line ? ` (${row.line})` : ''}
-                        {row.source === 'estimated' ? ' *' : ''}
-                      </TableCell>
-                      <TableCell sx={{ color: '#e8eef7' }}>{row.odds.toFixed(2)}</TableCell>
-                      <TableCell sx={{ color: '#e8eef7' }}>{row.aiProb}%</TableCell>
-                      <TableCell sx={{ color: '#e8eef7' }}>
-                        {(row.edge * 100).toFixed(1)}%
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={row.verdict}
-                          color={verdictColor[row.verdict] ?? 'default'}
-                        />
-                      </TableCell>
-                    </TableRow>
+          <Box>
+            <Typography fontWeight={700} gutterBottom>
+              Últimos partidos (solo scrapados)
+            </Typography>
+            {payload.form?.available && payload.form.recentScores.length > 0 ? (
+              <Stack spacing={1}>
+                <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                  {payload.form.recentScores.map((s, i) => (
+                    <Chip key={`${s}-${i}`} label={s} size="small" variant="outlined" />
                   ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  {payload.form.message}
+                  {payload.form.avgGoalsTotal != null &&
+                    ` · Media goles/partido: ${payload.form.avgGoalsTotal}`}
+                  {payload.form.cardsTotal != null &&
+                    ` · Tarjetas totales muestra: ${payload.form.cardsTotal}`}
+                </Typography>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Fecha</TableCell>
+                      <TableCell>Partido</TableCell>
+                      <TableCell>Marcador</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {payload.form.rows.slice(0, 10).map((r) => (
+                      <TableRow key={r.matchId} hover>
+                        <TableCell>{r.date}</TableCell>
+                        <TableCell>{r.label}</TableCell>
+                        <TableCell>{r.score ?? '—'}</TableCell>
+                        <TableCell align="right">
+                          {onAnalyzeMatch && (
+                            <Button size="small" onClick={() => onAnalyzeMatch(r.matchId)}>
+                              Analizar
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Stack>
+            ) : (
+              <Alert severity="warning" variant="outlined">
+                {payload.form?.message ??
+                  'Sin historial de marcadores. No se muestran datos inventados.'}
+              </Alert>
+            )}
+          </Box>
 
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
+          {payload.relatedMatches && payload.relatedMatches.length > 0 && (
+            <Box>
+              <Typography fontWeight={700} gutterBottom>
+                Partidos del scanner (clic para analizar)
+              </Typography>
+              <Stack spacing={0.75}>
+                {payload.relatedMatches
+                  .filter((rm) => rm.id)
+                  .map((rm) => (
+                    <Stack
+                      key={rm.id}
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      sx={{
+                        px: 1.5,
+                        py: 1,
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        cursor: onAnalyzeMatch ? 'pointer' : 'default',
+                        '&:hover': onAnalyzeMatch ? { bgcolor: 'action.hover' } : undefined,
+                      }}
+                      onClick={() => onAnalyzeMatch?.(rm.id)}
+                    >
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <SportIcon sport={m?.sport} />
+                        <Box>
+                          <Typography fontWeight={600} variant="body2">
+                            {rm.homeTeam} vs {rm.awayTeam}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {rm.league}
+                            {rm.tip ? ` · tip ${rm.tip}` : ''}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                      {onAnalyzeMatch && (
+                        <Button size="small" variant="text">
+                          Analizar
+                        </Button>
+                      )}
+                    </Stack>
+                  ))}
+              </Stack>
+            </Box>
+          )}
+
+          <Box sx={{ overflowX: 'auto' }}>
+            <Typography fontWeight={700} gutterBottom>
+              Mercados
+            </Typography>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Mercado</TableCell>
+                  <TableCell>Cuota</TableCell>
+                  <TableCell>Prob</TableCell>
+                  <TableCell>Edge</TableCell>
+                  <TableCell>Origen</TableCell>
+                  <TableCell>Veredicto</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {payload.markets.slice(0, 16).map((row, i) => (
+                  <TableRow key={`${row.market}-${i}`}>
+                    <TableCell>{row.market}</TableCell>
+                    <TableCell>{row.odds.toFixed(2)}</TableCell>
+                    <TableCell>{row.aiProb}%</TableCell>
+                    <TableCell>{(row.edge * 100).toFixed(1)}%</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={
+                          row.source === 'book'
+                            ? 'casa'
+                            : row.source === 'implied'
+                              ? 'implícita'
+                              : row.source
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={row.verdict}
+                        color={verdictColor[row.verdict] ?? 'default'}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
             {(
               [
-                ['Value', payload.picks.value, 'success'],
-                ['Seguro', payload.picks.safe, 'info'],
-                ['Arriesgado', payload.picks.risky, 'warning'],
-                ['Evitar', payload.picks.avoid, 'error'],
+                ['Value', payload.picks.value, 'success.light'],
+                ['Seguro', payload.picks.safe, 'info.light'],
+                ['Arriesgado', payload.picks.risky, 'warning.light'],
+                ['Evitar', payload.picks.avoid, 'error.light'],
               ] as const
-            ).map(([title, pick, color]) => (
-              <Card key={title} sx={{ flex: 1, bgcolor: '#121a2b' }}>
-                <CardContent>
-                  <Chip size="small" label={title} color={color} sx={{ mb: 1 }} />
-                  {pick ? (
-                    <>
-                      <Typography fontWeight={700}>{pick.market}</Typography>
-                      <Typography variant="body2">
-                        @{pick.odds.toFixed(2)} · {pick.aiProb}%
-                      </Typography>
-                      <Typography variant="caption" display="block" sx={{ opacity: 0.75, mt: 1 }}>
-                        {pick.rationale}
-                      </Typography>
-                    </>
-                  ) : (
-                    <Typography variant="body2" sx={{ opacity: 0.5 }}>
-                      —
+            ).map(([title, pick, bg]) => (
+              <Box
+                key={title}
+                sx={{
+                  flex: 1,
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  bgcolor: bg,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" fontWeight={700}>
+                  {title}
+                </Typography>
+                {pick ? (
+                  <>
+                    <Typography fontWeight={700}>{pick.market}</Typography>
+                    <Typography variant="body2">
+                      @{pick.odds.toFixed(2)} · {pick.aiProb}%
                     </Typography>
-                  )}
-                </CardContent>
-              </Card>
+                    <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                      {pick.rationale}
+                    </Typography>
+                  </>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    —
+                  </Typography>
+                )}
+              </Box>
             ))}
           </Stack>
 
           {payload.proposedAccumulators.length > 0 && (
-            <Card sx={{ bgcolor: '#121a2b' }}>
-              <CardContent>
-                <Typography fontWeight={700} gutterBottom>
-                  Combinadas propuestas
-                </Typography>
-                <Stack spacing={1}>
-                  {payload.proposedAccumulators.map((acc, i) => (
-                    <Box key={i} sx={{ p: 1.5, borderRadius: 1, bgcolor: '#0b1220' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-                        <Typography fontWeight={600}>{acc.title}</Typography>
-                        <Chip size="small" label={acc.riskTier} />
-                        <Chip size="small" variant="outlined" label={`@ ${acc.totalOdds}`} />
-                      </Stack>
-                      {acc.legs.map((leg, j) => (
-                        <Typography key={j} variant="body2" sx={{ opacity: 0.85 }}>
-                          · {leg.matchLabel}: {leg.market} @{leg.odds}
+            <Box>
+              <Typography fontWeight={700} gutterBottom>
+                Combinadas propuestas
+              </Typography>
+              <Stack spacing={1}>
+                {payload.proposedAccumulators.map((acc, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      bgcolor: 'grey.50',
+                    }}
+                  >
+                    <Stack direction="row" spacing={1} alignItems="center" mb={0.5} flexWrap="wrap">
+                      <Typography fontWeight={600}>{acc.title}</Typography>
+                      <Chip size="small" label={acc.riskTier} />
+                      <Chip size="small" variant="outlined" label={`@ ${acc.totalOdds}`} />
+                    </Stack>
+                    {acc.legs.map((leg, j) => (
+                      <Stack
+                        key={j}
+                        direction="row"
+                        justifyContent="space-between"
+                        alignItems="center"
+                      >
+                        <Typography variant="body2" color="text.secondary">
+                          {leg.matchLabel}: {leg.market} @{leg.odds}
                         </Typography>
-                      ))}
-                    </Box>
-                  ))}
-                </Stack>
-              </CardContent>
-            </Card>
+                        {leg.matchId && onAnalyzeMatch && (
+                          <Button size="small" onClick={() => onAnalyzeMatch(leg.matchId!)}>
+                            Ver partido
+                          </Button>
+                        )}
+                      </Stack>
+                    ))}
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
           )}
 
-          <Alert severity="info" sx={{ bgcolor: '#152238', color: '#c5d4ea' }}>
+          <Alert severity="info" variant="outlined">
             {payload.edgeSummary}
             <br />
             {payload.disclaimer}

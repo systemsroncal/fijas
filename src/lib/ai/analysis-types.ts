@@ -9,7 +9,8 @@ export type AnalysisMarket = {
   aiProb: number;
   edge: number;
   verdict: 'value' | 'safe' | 'risky' | 'avoid' | 'neutral';
-  source: 'model' | 'estimated';
+  /** model = Poisson; book = cuota de casa scrapeada; implied = cuota derivada del modelo (no es casa) */
+  source: 'model' | 'estimated' | 'book' | 'implied';
 };
 
 export type AnalysisPick = {
@@ -24,11 +25,41 @@ export type ProposedAccumulator = {
   riskTier: 'safe' | 'value' | 'risky';
   totalOdds: number;
   legs: Array<{
+    matchId?: string;
     matchLabel: string;
     market: string;
     betChoice: string;
     odds: number;
   }>;
+};
+
+export type FormMatchRow = {
+  matchId: string;
+  label: string;
+  date: string;
+  score: string | null;
+  tip: string | null;
+};
+
+export type TeamFormBlock = {
+  available: boolean;
+  message: string;
+  recentScores: string[];
+  avgGoalsFor: number | null;
+  avgGoalsAgainst: number | null;
+  avgGoalsTotal: number | null;
+  cardsTotal: number | null;
+  avgCards: number | null;
+  sampleSize: number;
+  rows: FormMatchRow[];
+};
+
+export type RelatedMatchRow = {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  league: string;
+  tip?: string | null;
 };
 
 export type StructuredMatchPayload = {
@@ -39,17 +70,23 @@ export type StructuredMatchPayload = {
     awayTeam: string;
     league: string;
     tip?: string | null;
+    sport?: string;
+    homeCrestUrl?: string | null;
+    awayCrestUrl?: string | null;
   };
   probs: { home: number; draw: number; away: number };
-  scoreline: { mostLikely: string; alternatives: string[] };
+  scoreline: { mostLikely: string; alternatives: string[]; source: 'model' };
   expected: {
-    xgHome: number;
-    xgAway: number;
-    cornersHome: number;
-    cornersAway: number;
-    cardsHome: number;
-    cardsAway: number;
+    xgHome: number | null;
+    xgAway: number | null;
+    cornersHome: number | null;
+    cornersAway: number | null;
+    cardsHome: number | null;
+    cardsAway: number | null;
+    note: string;
   };
+  form?: TeamFormBlock;
+  relatedMatches?: RelatedMatchRow[];
   markets: AnalysisMarket[];
   picks: {
     value: AnalysisPick | null;

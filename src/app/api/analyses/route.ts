@@ -8,10 +8,16 @@ import { analyzeAccumulatorWithFallback } from '@/lib/ai/providers';
 import {
   buildModelPayload,
   buildRandomScannerPayload,
+  emptyForm,
   enrichPayloadWithLlm,
   StructuredMatchPayload,
 } from '@/lib/ai/structured-analysis';
 import { MatchContext } from '@/lib/ai/football-model';
+import {
+  extractScoreFromText,
+  isJunkMatch,
+} from '@/lib/match-display';
+import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
 
 const schema = z
   .object({
@@ -38,22 +44,21 @@ type LegJson = {
   label?: string;
 };
 
-function toCtx(
-  m: {
-    id: string;
-    homeTeam: string;
-    awayTeam: string;
-    league: string;
-    predictions?: Array<{
-      betChoice?: string | null;
-      oddsHome?: Prisma.Decimal | null;
-      oddsDraw?: Prisma.Decimal | null;
-      oddsAway?: Prisma.Decimal | null;
-      oddsOver?: Prisma.Decimal | null;
-      oddsUnder?: Prisma.Decimal | null;
-    }>;
-  }
-): MatchContext & { id: string } {
+function toCtx(m: {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  league: string;
+  predictions?: Array<{
+    betChoice?: string | null;
+    oddsHome?: Prisma.Decimal | null;
+    oddsDraw?: Prisma.Decimal | null;
+    oddsAway?: Prisma.Decimal | null;
+    oddsOver?: Prisma.Decimal | null;
+    oddsUnder?: Prisma.Decimal | null;
+    statsNote?: string | null;
+  }>;
+}): MatchContext & { id: string } {
   const p = m.predictions?.[0];
   return {
     id: m.id,
@@ -79,6 +84,85 @@ function scoresFromPayload(payload: StructuredMatchPayload) {
 }
 
 /**
+ * Forma reciente SOLO con marcadores reales extraídos de statsNote / historial BD.
+ */
+async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFormBlock> {
+  const history = await prisma.match.findMany({
+    where: {
+      OR: [
+        { homeTeam },
+        { awayTeam },
+        { homeTeam: homeTeam },
+        { awayTeam: awayTeam },
+        { homeTeam: { equals: homeTeam } },
+        { awayTeam: { equals: awayTeam } },
+      ],
+    },
+    include: {
+      predictions: { orderBy: { scrapedAt: 'desc' }, take: 2 },
+    },
+    orderBy: { matchDate: 'desc' },
+    take: 40,
+  });
+
+  const rows: FormMatchRow[] = [];
+  const goalSamples: number[] = [];
+  let cardsTotal = 0;
+  let cardsSamples = 0;
+
+  for (const m of history) {
+    if (isJunkMatch(m.homeTeam, m.awayTeam)) continue;
+    const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
+    const score = extractScoreFromText(note) ?? extractScoreFromText(m.kickoff);
+    const tip = m.predictions[0]?.betChoice ?? null;
+    rows.push({
+      matchId: m.id,
+      label: `${m.homeTeam} vs ${m.awayTeam}`,
+      date: m.matchDate.toISOString().slice(0, 10),
+      score,
+      tip,
+    });
+    if (score) {
+      const [a, b] = score.split('-').map(Number);
+      if (!Number.isNaN(a) && !Number.isNaN(b)) goalSamples.push(a + b);
+    }
+    const cardMatch = note.match(/(\d+)\s*( tarjetas|cards)/i);
+    if (cardMatch) {
+      cardsTotal += Number(cardMatch[1]);
+      cardsSamples += 1;
+    }
+  }
+
+  const withScore = rows.filter((r) => r.score).slice(0, 10);
+  if (withScore.length === 0) {
+    return emptyForm(
+      rows.length > 0
+        ? `Hay ${rows.length} partidos registrados de estos equipos, pero sin marcador scrapeado. No se inventan resultados.`
+        : undefined
+    );
+  }
+
+  const avgGoalsTotal =
+    goalSamples.length > 0
+      ? Math.round((goalSamples.reduce((s, n) => s + n, 0) / goalSamples.length) * 100) / 100
+      : null;
+
+  return {
+    available: true,
+    message: `Historial real: ${withScore.length} marcadores scrapeados (máx. 10).`,
+    recentScores: withScore.map((r) => r.score!).slice(0, 10),
+    avgGoalsFor: null,
+    avgGoalsAgainst: null,
+    avgGoalsTotal,
+    cardsTotal: cardsSamples > 0 ? cardsTotal : null,
+    avgCards:
+      cardsSamples > 0 ? Math.round((cardsTotal / cardsSamples) * 100) / 100 : null,
+    sampleSize: withScore.length,
+    rows: withScore,
+  };
+}
+
+/**
  * Analiza partido, combinada o scanner aleatorio.
  */
 export async function POST(request: Request) {
@@ -96,22 +180,29 @@ export async function POST(request: Request) {
       keysByProvider[k.provider] = decryptSecret(k.encryptedKey);
     }
 
-    // ——— MATCH ———
     if (body.mode === 'MATCH') {
       if (!body.matchId) {
         return NextResponse.json({ error: 'matchId requerido' }, { status: 400 });
       }
       const match = await prisma.match.findUnique({
         where: { id: body.matchId },
-        include: {
-          predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 },
-        },
+        include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 3 } },
       });
       if (!match) {
         return NextResponse.json({ error: 'Partido no encontrado' }, { status: 404 });
       }
+      if (isJunkMatch(match.homeTeam, match.awayTeam)) {
+        return NextResponse.json(
+          {
+            error:
+              'Este registro parece una cabecera de tabla (p.ej. Time vs Match), no un partido real. Ejecuta scrapers mejores o elige otro partido.',
+          },
+          { status: 400 }
+        );
+      }
 
-      let payload = buildModelPayload(toCtx(match), 'MATCH');
+      const form = await loadTeamForm(match.homeTeam, match.awayTeam);
+      let payload = buildModelPayload(toCtx(match), 'MATCH', { form });
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'poisson-model';
@@ -151,7 +242,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ analysis, payload });
     }
 
-    // ——— RANDOM ———
     if (body.mode === 'RANDOM') {
       const dayStart = new Date();
       dayStart.setUTCHours(0, 0, 0, 0);
@@ -161,16 +251,20 @@ export async function POST(request: Request) {
       const matches = await prisma.match.findMany({
         where: { matchDate: { gte: dayStart, lt: dayEnd } },
         include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 } },
-        take: 40,
+        take: 80,
       });
-      if (matches.length === 0) {
+      const valid = matches.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam));
+      if (valid.length === 0) {
         return NextResponse.json(
-          { error: 'No hay partidos hoy para el scanner' },
+          {
+            error:
+              'No hay partidos válidos hoy (solo cabeceras/basura del scraper). Re-ejecuta scrapers de fuentes tip.',
+          },
           { status: 400 }
         );
       }
 
-      let payload = buildRandomScannerPayload(matches.map(toCtx));
+      let payload = buildRandomScannerPayload(valid.map(toCtx));
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'random-scanner-poisson';
@@ -187,7 +281,7 @@ export async function POST(request: Request) {
       const analysis = await prisma.analysis.create({
         data: {
           mode: AnalysisMode.RANDOM,
-          matchId: payload.match?.id ?? null,
+          matchId: payload.match?.id && payload.match.id !== 'N/A' ? payload.match.id : null,
           userId: auth.user.id,
           iaProvider: providerUsed,
           promptUsed,
@@ -203,7 +297,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ analysis, payload });
     }
 
-    // ——— ACCUMULATOR (propia o sugerida) ———
     let accumulator = body.accumulatorId
       ? await prisma.accumulator.findFirst({
           where: { id: body.accumulatorId, userId: auth.user.id },
@@ -234,6 +327,7 @@ export async function POST(request: Request) {
       for (const leg of legs.slice(0, 12)) {
         const home = String(leg.home ?? leg.label?.split(' vs ')[0] ?? 'TBD').trim();
         const away = String(leg.away ?? leg.label?.split(' vs ')[1] ?? 'TBD').trim();
+        if (isJunkMatch(home, away)) continue;
         const league = String(leg.league ?? suggested.sourceSlug);
         const matchKey = `suggested|${suggested.id}|${home}|${away}|${league}`.slice(0, 190);
 
@@ -339,9 +433,6 @@ export async function POST(request: Request) {
   }
 }
 
-/**
- * Lista análisis del usuario.
- */
 export async function GET() {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
