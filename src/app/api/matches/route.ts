@@ -37,7 +37,12 @@ export async function GET(request: Request) {
     take: 200,
   });
 
-  return NextResponse.json({ matches, updating: false });
+  const junk = /^(time|match|date|good|bad|league|home|away|vs|tbd|n\/?a|-|—)$/i;
+  const filtered = matches.filter(
+    (m) => !junk.test(m.homeTeam.trim()) && !junk.test(m.awayTeam.trim())
+  );
+
+  return NextResponse.json({ matches: filtered, updating: false });
 }
 
 function startOfTodayUtc(): Date {

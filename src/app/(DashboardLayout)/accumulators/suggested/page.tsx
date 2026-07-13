@@ -4,6 +4,7 @@ import { apiUrl } from '@/lib/paths';
 
 import { useEffect, useState } from 'react';
 import {
+  Button,
   Card,
   CardContent,
   Typography,
@@ -14,6 +15,7 @@ import {
   MenuItem,
   TextField,
 } from '@mui/material';
+import Link from 'next/link';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 
 type Suggested = {
@@ -53,19 +55,24 @@ export default function SuggestedAccumulatorsPage() {
         <Typography variant="h4" fontWeight={700}>
           Acumuladas sugeridas
         </Typography>
-        <TextField
-          select
-          size="small"
-          label="Fuente"
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          sx={{ minWidth: 180 }}
-        >
-          <MenuItem value="">Todas</MenuItem>
-          <MenuItem value="predictz">Predictz</MenuItem>
-          <MenuItem value="windrawwin">WinDrawWin</MenuItem>
-          <MenuItem value="scores24">Scores24</MenuItem>
-        </TextField>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button component={Link} href="/analyses" variant="outlined" size="small">
+            Ir a Análisis IA
+          </Button>
+          <TextField
+            select
+            size="small"
+            label="Fuente"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="">Todas</MenuItem>
+            <MenuItem value="predictz">Predictz</MenuItem>
+            <MenuItem value="windrawwin">WinDrawWin</MenuItem>
+            <MenuItem value="scores24">Scores24</MenuItem>
+          </TextField>
+        </Stack>
       </Stack>
 
       {loading ? (
@@ -82,12 +89,26 @@ export default function SuggestedAccumulatorsPage() {
           {items.map((item) => (
             <Card key={item.id}>
               <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                <Stack direction="row" spacing={1} alignItems="center" mb={1} flexWrap="wrap">
                   <Chip label={item.sourceSlug} size="small" color="primary" />
                   <Typography fontWeight={600}>{item.title}</Typography>
                   <Chip label={`@ ${item.totalOdds}`} size="small" />
+                  <Button
+                    component={Link}
+                    href="/analyses"
+                    size="small"
+                    variant="contained"
+                    sx={{ ml: 'auto' }}
+                  >
+                    Analizar con IA
+                  </Button>
                 </Stack>
-                <Typography variant="body2" color="textSecondary" component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  component="pre"
+                  sx={{ whiteSpace: 'pre-wrap' }}
+                >
                   {JSON.stringify(item.legsJson, null, 2)}
                 </Typography>
               </CardContent>

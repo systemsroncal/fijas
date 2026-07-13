@@ -17,9 +17,11 @@ import {
   TableHead,
   TableRow,
   CircularProgress,
+  Chip,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import LiveMatchesPoller from '@/components/LiveMatchesPoller';
+import { hasBookOdds, isJunkMatch, normalizeTip } from '@/lib/match-display';
 
 type MatchRow = {
   id: string;
@@ -28,6 +30,9 @@ type MatchRow = {
   homeTeam: string;
   awayTeam: string;
   predictions: Array<{
+    betType?: string;
+    betChoice?: string | null;
+    odds?: string | null;
     oddsHome: string | null;
     oddsDraw: string | null;
     oddsAway: string | null;
@@ -35,6 +40,7 @@ type MatchRow = {
     oddsUnder: string | null;
     oddsBttsYes: string | null;
     oddsBttsNo: string | null;
+    statsNote?: string | null;
     source: { name: string; slug: string };
   }>;
 };
@@ -49,21 +55,29 @@ export default function DashboardPage() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ date });
-    if (league) params.set('league', league);
-    if (source) params.set('source', source);
-    const res = await fetch(apiUrl(`/api/matches?${params}`));
-    if (res.ok) {
-      const data = await res.json();
-      setMatches(data.matches ?? []);
-    }
-    setLoading(false);
-  }, [date, league, source]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      const params = new URLSearchParams({ date });
+      if (league) params.set('league', league);
+      if (source) params.set('source', source);
+      const res = await fetch(apiUrl(`/api/matches?${params}`));
+      if (res.ok) {
+        const data = await res.json();
+        const rows = (data.matches ?? []) as MatchRow[];
+        setMatches(rows.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam)));
+      }
+      if (!opts?.silent) setLoading(false);
+    },
+    [date, league, source]
+  );
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  const silentReload = useCallback(() => {
+    load({ silent: true });
   }, [load]);
 
   return (
@@ -75,7 +89,7 @@ export default function DashboardPage() {
           </Typography>
           <Typography color="textSecondary">Filtros por liga, fecha y fuente</Typography>
         </Box>
-        <LiveMatchesPoller onUpdate={() => load()} />
+        <LiveMatchesPoller onUpdate={silentReload} />
       </Stack>
 
       <Card sx={{ mb: 3 }}>
@@ -104,10 +118,12 @@ export default function DashboardPage() {
               sx={{ minWidth: 180 }}
             >
               <MenuItem value="">Todas</MenuItem>
+              <MenuItem value="safertip">SaferTip</MenuItem>
               <MenuItem value="predictz">Predictz</MenuItem>
               <MenuItem value="windrawwin">WinDrawWin</MenuItem>
               <MenuItem value="scores24">Scores24</MenuItem>
               <MenuItem value="forebet">Forebet</MenuItem>
+              <MenuItem value="betway">Betway</MenuItem>
             </TextField>
           </Stack>
         </CardContent>
@@ -127,6 +143,7 @@ export default function DashboardPage() {
                   <TableCell>Liga</TableCell>
                   <TableCell>Local</TableCell>
                   <TableCell>Visitante</TableCell>
+                  <TableCell>Tip</TableCell>
                   <TableCell>1X2</TableCell>
                   <TableCell>O/U</TableCell>
                   <TableCell>BTTS</TableCell>
@@ -136,13 +153,15 @@ export default function DashboardPage() {
               <TableBody>
                 {matches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} align="center">
+                    <TableCell colSpan={9} align="center">
                       Sin partidos para esta fecha. Ejecuta el scraper o espera la próxima corrida.
                     </TableCell>
                   </TableRow>
                 )}
                 {matches.map((m) => {
                   const p = m.predictions[0];
+                  const tip = normalizeTip(p?.betChoice) ?? p?.betChoice ?? null;
+                  const book = hasBookOdds(p);
                   return (
                     <TableRow key={m.id} hover>
                       <TableCell>{m.kickoff ?? '—'}</TableCell>
@@ -150,15 +169,28 @@ export default function DashboardPage() {
                       <TableCell>{m.homeTeam}</TableCell>
                       <TableCell>{m.awayTeam}</TableCell>
                       <TableCell>
-                        {p
+                        {tip ? (
+                          <Chip size="small" label={String(tip)} color="primary" variant="outlined" />
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {book && p
                           ? `${p.oddsHome ?? '-'} / ${p.oddsDraw ?? '-'} / ${p.oddsAway ?? '-'}`
+                          : p?.odds
+                            ? String(p.odds)
+                            : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {p && (p.oddsOver || p.oddsUnder)
+                          ? `${p.oddsOver ?? '-'} / ${p.oddsUnder ?? '-'}`
                           : '—'}
                       </TableCell>
                       <TableCell>
-                        {p ? `${p.oddsOver ?? '-'} / ${p.oddsUnder ?? '-'}` : '—'}
-                      </TableCell>
-                      <TableCell>
-                        {p ? `${p.oddsBttsYes ?? '-'} / ${p.oddsBttsNo ?? '-'}` : '—'}
+                        {p && (p.oddsBttsYes || p.oddsBttsNo)
+                          ? `${p.oddsBttsYes ?? '-'} / ${p.oddsBttsNo ?? '-'}`
+                          : '—'}
                       </TableCell>
                       <TableCell>{p?.source.name ?? '—'}</TableCell>
                     </TableRow>

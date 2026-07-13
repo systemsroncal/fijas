@@ -4,11 +4,13 @@ import { apiUrl } from '@/lib/paths';
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Card,
   CardContent,
   Checkbox,
+  Chip,
   CircularProgress,
   Stack,
   Table,
@@ -18,9 +20,9 @@ import {
   TableRow,
   TextField,
   Typography,
-  Alert,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
+import { isJunkMatch, normalizeTip, resolveOdds } from '@/lib/match-display';
 
 type MatchRow = {
   id: string;
@@ -29,9 +31,12 @@ type MatchRow = {
   awayTeam: string;
   kickoff: string | null;
   predictions: Array<{
+    betChoice?: string | null;
+    odds?: string | null;
     oddsHome: string | null;
     oddsDraw: string | null;
     oddsAway: string | null;
+    source?: { name: string };
   }>;
 };
 
@@ -40,10 +45,12 @@ type Leg = {
   label: string;
   betChoice: string;
   odds: number;
+  estimated: boolean;
 };
 
 /**
  * Creador de combinadas: seleccionar partidos y calcular cuota total.
+ * Permite tip scrapeado aunque la fuente no traiga cuotas de casa.
  */
 export default function AccumulatorBuilderPage() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
@@ -59,7 +66,8 @@ export default function AccumulatorBuilderPage() {
       const res = await fetch(apiUrl(`/api/matches?date=${date}`));
       if (res.ok) {
         const data = await res.json();
-        setMatches(data.matches ?? []);
+        const rows = (data.matches ?? []) as MatchRow[];
+        setMatches(rows.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam)));
       }
       setLoading(false);
     };
@@ -71,15 +79,19 @@ export default function AccumulatorBuilderPage() {
     [legs]
   );
 
+  const hasEstimated = Object.values(legs).some((l) => l.estimated);
+
   const toggleLeg = (match: MatchRow, choice: '1' | 'X' | '2') => {
     const p = match.predictions[0];
-    const oddsMap = {
-      '1': Number(p?.oddsHome ?? 0),
-      X: Number(p?.oddsDraw ?? 0),
-      '2': Number(p?.oddsAway ?? 0),
-    };
-    const odds = oddsMap[choice];
-    if (!odds) return;
+    const odds = resolveOdds(choice, p, 1.5);
+    const book =
+      choice === '1'
+        ? Number(p?.oddsHome ?? 0) > 1
+        : choice === 'X'
+          ? Number(p?.oddsDraw ?? 0) > 1
+          : Number(p?.oddsAway ?? 0) > 1;
+    const tipMatches = normalizeTip(p?.betChoice) === choice && Number(p?.odds ?? 0) > 1;
+    const estimated = !book && !tipMatches;
 
     setLegs((prev) => {
       const key = match.id;
@@ -95,6 +107,7 @@ export default function AccumulatorBuilderPage() {
           label: `${match.homeTeam} vs ${match.awayTeam}`,
           betChoice: choice,
           odds,
+          estimated,
         },
       };
     });
@@ -153,6 +166,11 @@ export default function AccumulatorBuilderPage() {
               Guardar
             </Button>
           </Stack>
+          {hasEstimated && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Algunas cuotas son estimadas (1.50) porque la fuente solo trae tip, no odds de casa.
+            </Alert>
+          )}
           {message && (
             <Alert severity="success" sx={{ mt: 2 }}>
               {message}
@@ -172,11 +190,14 @@ export default function AccumulatorBuilderPage() {
             <Box textAlign="center" py={4}>
               <CircularProgress />
             </Box>
+          ) : matches.length === 0 ? (
+            <Typography color="textSecondary">No hay partidos para hoy.</Typography>
           ) : (
             <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Partido</TableCell>
+                  <TableCell>Tip</TableCell>
                   <TableCell>1</TableCell>
                   <TableCell>X</TableCell>
                   <TableCell>2</TableCell>
@@ -185,31 +206,54 @@ export default function AccumulatorBuilderPage() {
               <TableBody>
                 {matches.map((m) => {
                   const p = m.predictions[0];
+                  const tip = normalizeTip(p?.betChoice);
                   return (
                     <TableRow key={m.id}>
                       <TableCell>
                         {m.homeTeam} vs {m.awayTeam}
                         <Typography variant="caption" display="block" color="textSecondary">
                           {m.league} {m.kickoff ?? ''}
+                          {p?.source?.name ? ` · ${p.source.name}` : ''}
                         </Typography>
                       </TableCell>
+                      <TableCell>
+                        {tip ? (
+                          <Chip size="small" color="primary" label={tip} variant="outlined" />
+                        ) : p?.betChoice ? (
+                          <Chip size="small" label={p.betChoice} variant="outlined" />
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
                       {(['1', 'X', '2'] as const).map((c) => {
-                        const odds =
+                        const odds = resolveOdds(c, p, 1.5);
+                        const book =
                           c === '1'
-                            ? p?.oddsHome
+                            ? Number(p?.oddsHome ?? 0) > 1
                             : c === 'X'
-                              ? p?.oddsDraw
-                              : p?.oddsAway;
+                              ? Number(p?.oddsDraw ?? 0) > 1
+                              : Number(p?.oddsAway ?? 0) > 1;
                         return (
                           <TableCell key={c}>
                             <Stack direction="row" alignItems="center" spacing={0.5}>
                               <Checkbox
                                 size="small"
                                 checked={legs[m.id]?.betChoice === c}
-                                disabled={!odds}
                                 onChange={() => toggleLeg(m, c)}
                               />
-                              <span>{odds ?? '—'}</span>
+                              <span>
+                                {book
+                                  ? String(
+                                      c === '1'
+                                        ? p?.oddsHome
+                                        : c === 'X'
+                                          ? p?.oddsDraw
+                                          : p?.oddsAway
+                                    )
+                                  : tip === c
+                                    ? `~${odds.toFixed(2)}`
+                                    : '—'}
+                              </span>
                             </Stack>
                           </TableCell>
                         );
