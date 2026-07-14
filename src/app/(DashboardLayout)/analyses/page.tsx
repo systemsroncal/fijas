@@ -107,7 +107,7 @@ export default function AnalysesPage() {
       fetch(apiUrl('/api/accumulators')),
       fetch(apiUrl('/api/accumulators/suggested')),
       fetch(apiUrl('/api/analyses')),
-      fetch(apiUrl(`/api/matches?date=${date}`)),
+      fetch(apiUrl(`/api/matches?date=${date}&limit=1000`)),
     ]);
     if (aRes.ok) {
       const data = await aRes.json();

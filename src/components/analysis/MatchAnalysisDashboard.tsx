@@ -46,7 +46,18 @@ function SportIcon({ sport }: { sport?: string }) {
   if (s === 'volleyball') return <IconBallVolleyball {...props} />;
   if (s === 'tennis') return <IconBallTennis {...props} />;
   if (s === 'esports') return <IconDeviceGamepad2 {...props} />;
-  if (s === 'other') return <IconQuestionMark {...props} />;
+  if (
+    s === 'other' ||
+    s === 'rugby' ||
+    s === 'cricket' ||
+    s === 'golf' ||
+    s === 'hockey' ||
+    s === 'baseball' ||
+    s === 'handball' ||
+    s === 'mma'
+  ) {
+    return <IconQuestionMark {...props} />;
+  }
   return <IconBallFootball {...props} />;
 }
 

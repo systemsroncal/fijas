@@ -212,21 +212,76 @@ export type SportKind =
   | 'basketball'
   | 'volleyball'
   | 'tennis'
+  | 'rugby'
+  | 'cricket'
+  | 'golf'
+  | 'hockey'
+  | 'baseball'
+  | 'handball'
+  | 'mma'
   | 'esports'
   | 'other';
+
+export const SPORT_OPTIONS: Array<{ id: SportKind | ''; label: string }> = [
+  { id: '', label: 'Todos los deportes' },
+  { id: 'football', label: 'Fútbol' },
+  { id: 'basketball', label: 'Baloncesto' },
+  { id: 'tennis', label: 'Tenis' },
+  { id: 'rugby', label: 'Rugby' },
+  { id: 'cricket', label: 'Cricket' },
+  { id: 'golf', label: 'Golf' },
+  { id: 'hockey', label: 'Hockey' },
+  { id: 'baseball', label: 'Béisbol' },
+  { id: 'handball', label: 'Balonmano' },
+  { id: 'volleyball', label: 'Vóley' },
+  { id: 'american_football', label: 'Fútbol americano' },
+  { id: 'mma', label: 'MMA / Boxeo' },
+  { id: 'esports', label: 'Esports' },
+  { id: 'other', label: 'Otros' },
+];
 
 /**
  * Infere deporte desde liga / texto (conservador: default fútbol).
  */
 export function detectSport(league: string, note?: string | null): SportKind {
   const t = `${league} ${note ?? ''}`.toLowerCase();
-  if (/\b(nba|ncaa|basket|baloncesto|euroleague)\b/.test(t)) return 'basketball';
-  if (/\b(nfl|ncaa football|american football|futbol americano)\b/.test(t)) {
+  if (/\b(nba|ncaa|ncaab|basket|baloncesto|euroleague|eurocup|acb|bbl|nbl|cba)\b/.test(t)) {
+    return 'basketball';
+  }
+  if (/\b(nfl|ncaa football|american football|futbol americano|ncaaf)\b/.test(t)) {
     return 'american_football';
   }
-  if (/\b(volley|vôlei|voleibol)\b/.test(t)) return 'volleyball';
-  if (/\b(atp|wta|tennis|tenis)\b/.test(t)) return 'tennis';
-  if (/\b(esport|e-sport|lol|dota|csgo|cs2|valorant)\b/.test(t)) return 'esports';
+  if (/\b(volley|vôlei|voleibol|fivb)\b/.test(t)) return 'volleyball';
+  if (/\b(atp|wta|tennis|tenis|itf|challenger)\b/.test(t)) return 'tennis';
+  if (/\b(rugby|six nations|nrl|super rugby|top 14|premiership rugby|urc)\b/.test(t)) {
+    return 'rugby';
+  }
+  if (/\b(cricket|ipl|t20|test match|odi|bbl cricket|psl)\b/.test(t)) return 'cricket';
+  if (/\b(golf|pga|dp world|masters|ryder|european tour|liv golf)\b/.test(t)) return 'golf';
+  if (/\b(nhl|hockey|nhl|khl|iihf|shl|liiga)\b/.test(t)) return 'hockey';
+  if (/\b(mlb|baseball|npb|kbo|liga mexicana)\b/.test(t)) return 'baseball';
+  if (/\b(handball|balonmano|ihf)\b/.test(t)) return 'handball';
+  if (/\b(ufc|mma|boxing|boxeo|bellator|one championship)\b/.test(t)) return 'mma';
+  if (/\b(esport|e-sport|lol|dota|csgo|cs2|valorant|league of legends)\b/.test(t)) {
+    return 'esports';
+  }
+  // Prefijo explícito "Basketball: Liga"
+  const prefix = t.split(/[:|/]/)[0]?.trim() ?? '';
+  if (prefix === 'basketball' || prefix === 'baloncesto') return 'basketball';
+  if (prefix === 'tennis' || prefix === 'tenis') return 'tennis';
+  if (prefix === 'rugby') return 'rugby';
+  if (prefix === 'cricket') return 'cricket';
+  if (prefix === 'golf') return 'golf';
+  if (prefix === 'hockey') return 'hockey';
+  if (prefix === 'baseball' || prefix === 'beisbol' || prefix === 'béisbol') return 'baseball';
+  if (prefix === 'handball' || prefix === 'balonmano') return 'handball';
+  if (prefix === 'volleyball' || prefix === 'voley' || prefix === 'vóley') return 'volleyball';
+  if (prefix === 'mma' || prefix === 'boxing' || prefix === 'boxeo') return 'mma';
+  if (prefix === 'american_football' || prefix === 'nfl') return 'american_football';
+  if (prefix === 'esports' || prefix === 'esport') return 'esports';
+  if (prefix === 'football' || prefix === 'soccer' || prefix === 'futbol' || prefix === 'fútbol') {
+    return 'football';
+  }
   return 'football';
 }
 
@@ -237,6 +292,13 @@ export function sportLabel(sport: SportKind): string {
     basketball: 'Baloncesto',
     volleyball: 'Vóley',
     tennis: 'Tenis',
+    rugby: 'Rugby',
+    cricket: 'Cricket',
+    golf: 'Golf',
+    hockey: 'Hockey',
+    baseball: 'Béisbol',
+    handball: 'Balonmano',
+    mma: 'MMA / Boxeo',
     esports: 'Esports',
     other: 'Deporte',
   };

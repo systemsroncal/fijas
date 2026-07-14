@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-guard';
-import { isJunkMatch, repairMisparsedMatch } from '@/lib/match-display';
+import { detectSport, isJunkMatch, repairMisparsedMatch, type SportKind } from '@/lib/match-display';
 import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
 
 /**
- * Lista partidos con predicciones recientes (filtros: date, league, source).
- * Repara filas SaferTip mal parseadas y oculta partidos ya terminados del día.
+ * Lista partidos con predicciones recientes.
+ * Filtros: date, league, source, sport, limit, hideFinished.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth();
@@ -16,7 +16,10 @@ export async function GET(request: Request) {
   const date = searchParams.get('date') ?? localDateISO();
   const league = searchParams.get('league');
   const source = searchParams.get('source');
+  const sportFilter = (searchParams.get('sport') ?? '').trim().toLowerCase() as SportKind | '';
   const hideFinished = searchParams.get('hideFinished') !== '0';
+  const limitRaw = Number(searchParams.get('limit') ?? 800);
+  const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 800, 50), 1500);
 
   const dayStart = new Date(`${date}T00:00:00.000Z`);
   const dayEnd = new Date(dayStart);
@@ -37,12 +40,13 @@ export async function GET(request: Request) {
         take: 5,
       },
     },
-    orderBy: [{ matchDate: 'asc' }, { kickoff: 'asc' }],
-    take: 200,
+    orderBy: [{ matchDate: 'asc' }, { kickoff: 'asc' }, { league: 'asc' }],
+    take: limit,
   });
 
   const now = new Date();
   const repaired = matches.map((m) => {
+    const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
     const fixed = repairMisparsedMatch({
       homeTeam: m.homeTeam,
       awayTeam: m.awayTeam,
@@ -54,14 +58,28 @@ export async function GET(request: Request) {
       homeTeam: fixed.homeTeam,
       awayTeam: fixed.awayTeam,
       kickoff: fixed.kickoff ?? m.kickoff,
+      sport: detectSport(m.league, note),
     };
   });
 
+  // Deduplicar por equipos+liga (varias fuentes)
+  const seen = new Set<string>();
   const filtered = repaired.filter((m) => {
     if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
     if (hideFinished && !isMatchStillOpen(date, m.kickoff, now)) return false;
+    if (sportFilter && m.sport !== sportFilter) return false;
+    const key = `${m.homeTeam}|${m.awayTeam}|${m.league}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 
-  return NextResponse.json({ matches: filtered, updating: false });
+  const sports = Array.from(new Set(filtered.map((m) => m.sport))).sort();
+
+  return NextResponse.json({
+    matches: filtered,
+    total: filtered.length,
+    sports,
+    updating: false,
+  });
 }

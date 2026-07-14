@@ -7,6 +7,7 @@ import re
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from sites.base import empty_result, soup_from_url
 
@@ -14,13 +15,41 @@ logger = logging.getLogger(__name__)
 
 _TIME_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
 
+_SPORT_PATH_HINTS = (
+    ("basketball", "Basketball"),
+    ("baloncesto", "Basketball"),
+    ("tennis", "Tennis"),
+    ("tenis", "Tennis"),
+    ("hockey", "Hockey"),
+    ("handball", "Handball"),
+    ("volleyball", "Volleyball"),
+    ("rugby", "Rugby"),
+    ("cricket", "Cricket"),
+    ("golf", "Golf"),
+    ("baseball", "Baseball"),
+    ("american-football", "American Football"),
+    ("american_football", "American Football"),
+    ("mma", "MMA"),
+    ("boxing", "Boxing"),
+    ("esport", "Esports"),
+    ("football", "Football"),
+    ("soccer", "Football"),
+)
+
+
+def _sport_from_url(url: str) -> str | None:
+    path = urlparse(url).path.lower()
+    for needle, label in _SPORT_PATH_HINTS:
+        if needle in path:
+            return label
+    return None
+
 
 def _split_vs(text: str) -> tuple[str, str] | None:
     """Separa 'A Vs B' / 'A vs B' / 'A v B' en (local, visitante)."""
     normalized = re.sub(r"\s+[vV][sS]\.?\s+", " vs ", text)
     normalized = re.sub(r"\s+[vV]\s+", " vs ", normalized)
     if " vs " not in normalized.lower():
-        # Fallback: "A - B" solo si ambos lados parecen equipos
         if " - " in text:
             parts = [p.strip() for p in text.split(" - ") if p.strip()]
             if len(parts) == 2 and all(len(p) > 2 for p in parts) and not any(
@@ -38,11 +67,7 @@ def _split_vs(text: str) -> tuple[str, str] | None:
 
 
 def _guess_teams(cells: list[str]) -> tuple[str | None, str | None, str | None]:
-    """Detecta local/visitante y hora opcional.
-
-    Returns:
-        (home, away, kickoff)
-    """
+    """Detecta local/visitante y hora opcional. Returns (home, away, kickoff)."""
     kickoff: str | None = None
     for cell in cells:
         t = cell.strip()
@@ -53,7 +78,6 @@ def _guess_teams(cells: list[str]) -> tuple[str | None, str | None, str | None]:
         if split:
             return split[0], split[1], kickoff
 
-    # SaferTip típico: [liga, hora, "A Vs B", tip...]
     if len(cells) >= 3 and _TIME_RE.match(cells[1].strip()):
         split = _split_vs(cells[2])
         if split:
@@ -97,13 +121,10 @@ class BaseHtmlScraper(ABC):
 
 
 class GenericTipsScraper(BaseHtmlScraper):
-    """Scraper genérico: intenta extraer filas de tablas con equipos.
-
-    Los selectores se pueden refinar desde el panel SuperAdmin
-    (selectors_config) y versionar en el repo.
-    """
+    """Scraper genérico: intenta extraer filas de tablas con equipos."""
 
     day_paths: list[str] = ["/"]
+    max_rows: int = 200
 
     def build_urls(self) -> list[str]:
         today = date.today()
@@ -120,8 +141,8 @@ class GenericTipsScraper(BaseHtmlScraper):
     def parse(self, html_url: str) -> list[dict[str, Any]]:
         soup = soup_from_url(html_url)
         predictions: list[dict[str, Any]] = []
-        # Heurística: filas con al menos 2 celdas de texto
-        for row in soup.select("table tr")[:80]:
+        sport = _sport_from_url(html_url)
+        for row in soup.select("table tr")[: self.max_rows]:
             cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
             if len(cells) < 3:
                 continue
@@ -129,11 +150,17 @@ class GenericTipsScraper(BaseHtmlScraper):
             if not home or not away:
                 continue
             tip = cells[-1] if cells else "N/A"
+            raw_league = cells[0] if cells else "Unknown"
+            league = (
+                f"{sport}: {raw_league}"
+                if sport and sport.lower() not in raw_league.lower()
+                else raw_league
+            )
             predictions.append(
                 {
                     "matchDate": date.today().isoformat(),
                     "kickoff": kickoff,
-                    "league": cells[0] if cells else "Unknown",
+                    "league": league,
                     "homeTeam": home,
                     "awayTeam": away,
                     "betType": "1X2",

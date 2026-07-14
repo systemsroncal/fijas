@@ -21,7 +21,15 @@ import {
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import LiveMatchesPoller from '@/components/LiveMatchesPoller';
-import { hasBookOdds, isJunkMatch, normalizeTip, formatReadablePick } from '@/lib/match-display';
+import {
+  hasBookOdds,
+  isJunkMatch,
+  normalizeTip,
+  formatReadablePick,
+  SPORT_OPTIONS,
+  sportLabel,
+  type SportKind,
+} from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
 
 type MatchRow = {
@@ -30,6 +38,7 @@ type MatchRow = {
   league: string;
   homeTeam: string;
   awayTeam: string;
+  sport?: SportKind;
   predictions: Array<{
     betType?: string;
     betChoice?: string | null;
@@ -52,6 +61,7 @@ type MatchRow = {
 export default function DashboardPage() {
   const [date, setDate] = useState(() => localDateISO());
   const [league, setLeague] = useState('');
+  const [sport, setSport] = useState('');
   const [source, setSource] = useState('');
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,8 +69,9 @@ export default function DashboardPage() {
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent) setLoading(true);
-      const params = new URLSearchParams({ date });
+      const params = new URLSearchParams({ date, limit: '1000' });
       if (league) params.set('league', league);
+      if (sport) params.set('sport', sport);
       if (source) params.set('source', source);
       const res = await fetch(apiUrl(`/api/matches?${params}`));
       if (res.ok) {
@@ -70,7 +81,7 @@ export default function DashboardPage() {
       }
       if (!opts?.silent) setLoading(false);
     },
-    [date, league, source]
+    [date, league, sport, source]
   );
 
   useEffect(() => {
@@ -112,6 +123,20 @@ export default function DashboardPage() {
             />
             <TextField
               select
+              label="Deporte"
+              value={sport}
+              onChange={(e) => setSport(e.target.value)}
+              size="small"
+              sx={{ minWidth: 180 }}
+            >
+              {SPORT_OPTIONS.map((o) => (
+                <MenuItem key={o.id || 'all'} value={o.id}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
               label="Fuente"
               value={source}
               onChange={(e) => setSource(e.target.value)}
@@ -141,6 +166,7 @@ export default function DashboardPage() {
               <TableHead>
                 <TableRow>
                   <TableCell>Hora</TableCell>
+                  <TableCell>Deporte</TableCell>
                   <TableCell>Liga</TableCell>
                   <TableCell>Local</TableCell>
                   <TableCell>Visitante</TableCell>
@@ -156,7 +182,7 @@ export default function DashboardPage() {
               <TableBody>
                 {matches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} align="center">
+                    <TableCell colSpan={12} align="center">
                       Sin partidos pendientes para esta fecha. Ejecuta el scraper o espera la próxima
                       corrida.
                     </TableCell>
@@ -173,6 +199,13 @@ export default function DashboardPage() {
                   return (
                     <TableRow key={m.id} hover>
                       <TableCell>{m.kickoff ?? '—'}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={sportLabel((m.sport ?? 'football') as SportKind)}
+                          variant="outlined"
+                        />
+                      </TableCell>
                       <TableCell>{m.league}</TableCell>
                       <TableCell>
                         <Typography fontWeight={700} variant="body2" component="span">

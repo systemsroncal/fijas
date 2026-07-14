@@ -1,4 +1,4 @@
-"""Scraper Scores24 con bypass Cloudflare (cloudscraper)."""
+"""Scraper Scores24 con bypass Cloudflare (cloudscraper) — multi-deporte."""
 
 from __future__ import annotations
 
@@ -18,9 +18,23 @@ from sites.base import (
 
 logger = logging.getLogger(__name__)
 
+SPORT_PATHS = [
+    ("football", "Football"),
+    ("basketball", "Basketball"),
+    ("tennis", "Tennis"),
+    ("hockey", "Hockey"),
+    ("volleyball", "Volleyball"),
+    ("handball", "Handball"),
+    ("baseball", "Baseball"),
+    ("american-football", "American Football"),
+    ("rugby", "Rugby"),
+    ("cricket", "Cricket"),
+    ("esports", "Esports"),
+]
+
 
 class Scores24Scraper:
-    """Scores24.live — Cloudflare + retrasos 5-15s + reintentos exponenciales."""
+    """Scores24.live — varias rutas de deporte."""
 
     slug = "scores24"
     base_url = "https://scores24.live"
@@ -37,52 +51,53 @@ class Scores24Scraper:
 
     def scrape(self) -> dict[str, Any]:
         result = empty_result()
-        url = f"{self.base_url}/en/football"
+        for path, sport_label in SPORT_PATHS:
+            url = f"{self.base_url}/en/{path}"
 
-        def attempt() -> str:
-            random_delay(5, 15)
+            def attempt(u: str = url) -> str:
+                random_delay(3, 10)
+                try:
+                    return self._fetch(u)
+                except Exception:
+                    for proxy in FREE_PROXIES[:2]:
+                        try:
+                            random_delay(3, 8)
+                            return self._fetch(u, proxy)
+                        except Exception:
+                            continue
+                    raise
+
             try:
-                return self._fetch(url)
-            except Exception:
-                for proxy in FREE_PROXIES[:3]:
-                    try:
-                        random_delay(5, 15)
-                        return self._fetch(url, proxy=proxy)
-                    except Exception:
-                        continue
-                raise
+                html = exponential_retry(attempt, max_attempts=2, waits=[5, 15])
+                preds = self._parse_html(html, sport_label)
+                result["predictions"].extend(preds)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Scores24 %s failed: %s", path, exc)
 
-        try:
-            html = exponential_retry(attempt, max_attempts=3, waits=[5, 10, 30])
-            # Parseo ligero: buscar patrones de partidos en JSON embebido o texto
-            preds = self._parse_html(html)
-            result["predictions"] = preds
-            if preds:
-                result["suggestedAccumulators"].append(
-                    {
-                        "title": "Scores24 combo",
-                        "totalOdds": 4.5,
-                        "matchDate": date.today().isoformat(),
-                        "legs": preds[:5],
-                    }
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Scores24 failed after retries: %s", exc)
+        if result["predictions"]:
+            result["suggestedAccumulators"].append(
+                {
+                    "title": "Scores24 multi-sport",
+                    "totalOdds": 4.5,
+                    "matchDate": date.today().isoformat(),
+                    "legs": result["predictions"][:5],
+                }
+            )
         return result
 
-    def _parse_html(self, html: str) -> list[dict[str, Any]]:
+    def _parse_html(self, html: str, sport_label: str) -> list[dict[str, Any]]:
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(html, "lxml")
         preds: list[dict[str, Any]] = []
-        for row in soup.select("[class*='match'], tr, .event")[:60]:
+        for row in soup.select("[class*='match'], tr, .event")[:120]:
             text = row.get_text(" ", strip=True)
             if len(text) < 8:
                 continue
             preds.append(
                 {
                     "matchDate": date.today().isoformat(),
-                    "league": "Scores24",
+                    "league": f"{sport_label}: Scores24",
                     "homeTeam": text[:40],
                     "awayTeam": text[40:80] or "TBD",
                     "betType": "1X2",

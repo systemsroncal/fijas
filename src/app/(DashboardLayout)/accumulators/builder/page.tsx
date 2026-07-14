@@ -2,7 +2,7 @@
 
 import { apiUrl } from '@/lib/paths';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -12,6 +12,7 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -22,7 +23,15 @@ import {
   Typography,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
-import { formatReadablePick, isJunkMatch, normalizeTip, resolveOdds } from '@/lib/match-display';
+import {
+  formatReadablePick,
+  isJunkMatch,
+  normalizeTip,
+  resolveOdds,
+  sportLabel,
+  SPORT_OPTIONS,
+  type SportKind,
+} from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
 
 type MatchRow = {
@@ -31,6 +40,7 @@ type MatchRow = {
   homeTeam: string;
   awayTeam: string;
   kickoff: string | null;
+  sport?: SportKind;
   predictions: Array<{
     betChoice?: string | null;
     odds?: string | null;
@@ -50,30 +60,40 @@ type Leg = {
 };
 
 /**
- * Creador de combinadas: seleccionar partidos y calcular cuota total.
- * Permite tip scrapeado aunque la fuente no traiga cuotas de casa.
+ * Creador de combinadas: filtros por fecha/deporte + más partidos.
  */
 export default function AccumulatorBuilderPage() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [legs, setLegs] = useState<Record<string, Leg>>({});
   const [name, setName] = useState('');
+  const [date, setDate] = useState(() => localDateISO());
+  const [league, setLeague] = useState('');
+  const [sport, setSport] = useState('');
+  const [source, setSource] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ date, limit: '1000' });
+    if (league.trim()) params.set('league', league.trim());
+    if (sport) params.set('sport', sport);
+    if (source) params.set('source', source);
+    const res = await fetch(apiUrl(`/api/matches?${params}`));
+    if (res.ok) {
+      const data = await res.json();
+      const rows = (data.matches ?? []) as MatchRow[];
+      setMatches(rows.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam)));
+    } else {
+      setMatches([]);
+    }
+    setLoading(false);
+  }, [date, league, sport, source]);
+
   useEffect(() => {
-    const load = async () => {
-      const date = localDateISO();
-      const res = await fetch(apiUrl(`/api/matches?date=${date}`));
-      if (res.ok) {
-        const data = await res.json();
-        const rows = (data.matches ?? []) as MatchRow[];
-        setMatches(rows.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam)));
-      }
-      setLoading(false);
-    };
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
   const totalOdds = useMemo(
     () => Object.values(legs).reduce((acc, leg) => acc * leg.odds, 1),
@@ -146,12 +166,69 @@ export default function AccumulatorBuilderPage() {
 
   return (
     <PageContainer title="Creador de combinadas" description="Arma tu acumulada">
-      <Typography variant="h4" fontWeight={700} mb={2}>
-        Creador de combinadas
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
+        <Typography variant="h4" fontWeight={700}>
+          Creador de combinadas
+        </Typography>
+        <Chip
+          label={`${matches.length} partidos`}
+          color={matches.length > 0 ? 'primary' : 'default'}
+          variant="outlined"
+        />
+      </Stack>
 
       <Card sx={{ mb: 2 }}>
         <CardContent>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} mb={2}>
+            <TextField
+              type="date"
+              label="Fecha"
+              InputLabelProps={{ shrink: true }}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              size="small"
+            />
+            <TextField
+              label="Liga / torneo"
+              value={league}
+              onChange={(e) => setLeague(e.target.value)}
+              size="small"
+              placeholder="Ej. NBA, ATP, Premier…"
+            />
+            <TextField
+              select
+              label="Deporte"
+              value={sport}
+              onChange={(e) => setSport(e.target.value)}
+              size="small"
+              sx={{ minWidth: 180 }}
+            >
+              {SPORT_OPTIONS.map((o) => (
+                <MenuItem key={o.id || 'all'} value={o.id}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Fuente"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              size="small"
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              <MenuItem value="safertip">SaferTip</MenuItem>
+              <MenuItem value="stakegains">StakeGains</MenuItem>
+              <MenuItem value="predictz">Predictz</MenuItem>
+              <MenuItem value="windrawwin">WinDrawWin</MenuItem>
+              <MenuItem value="forebet">Forebet</MenuItem>
+              <MenuItem value="scores24">Scores24</MenuItem>
+              <MenuItem value="oddsportal">OddsPortal</MenuItem>
+              <MenuItem value="betway">Betway</MenuItem>
+            </TextField>
+          </Stack>
+
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center">
             <TextField
               label="Nombre (opcional)"
@@ -170,6 +247,7 @@ export default function AccumulatorBuilderPage() {
           {hasEstimated && (
             <Alert severity="info" sx={{ mt: 2 }}>
               Algunas cuotas son estimadas (1.50) porque la fuente solo trae tip, no odds de casa.
+              En tenis/golf el empate suele no aplicar.
             </Alert>
           )}
           {message && (
@@ -192,24 +270,33 @@ export default function AccumulatorBuilderPage() {
               <CircularProgress />
             </Box>
           ) : matches.length === 0 ? (
-            <Typography color="textSecondary">No hay partidos para hoy.</Typography>
+            <Typography color="textSecondary">
+              No hay partidos para esta fecha/filtro. Cambia la fecha, el deporte o ejecuta scrapers
+              multi-deporte (Forebet, Scores24, OddsPortal).
+            </Typography>
           ) : (
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell>Deporte</TableCell>
                   <TableCell>Partido</TableCell>
                   <TableCell>Tip</TableCell>
-                  <TableCell>Local gana</TableCell>
+                  <TableCell>Local / P1 gana</TableCell>
                   <TableCell>Empate</TableCell>
-                  <TableCell>Visita gana</TableCell>
+                  <TableCell>Visita / P2 gana</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {matches.map((m) => {
                   const p = m.predictions[0];
                   const tip = normalizeTip(p?.betChoice);
+                  const sportId = (m.sport ?? 'football') as SportKind;
+                  const allowDraw = sportId === 'football' || sportId === 'hockey' || sportId === 'handball';
                   return (
-                    <TableRow key={m.id}>
+                    <TableRow key={m.id} hover>
+                      <TableCell>
+                        <Chip size="small" label={sportLabel(sportId)} variant="outlined" />
+                      </TableCell>
                       <TableCell>
                         <Typography fontWeight={800} variant="body2">
                           {m.homeTeam} vs {m.awayTeam}
@@ -238,6 +325,15 @@ export default function AccumulatorBuilderPage() {
                         )}
                       </TableCell>
                       {(['1', 'X', '2'] as const).map((c) => {
+                        if (c === 'X' && !allowDraw) {
+                          return (
+                            <TableCell key={c}>
+                              <Typography variant="caption" color="text.disabled">
+                                N/A
+                              </Typography>
+                            </TableCell>
+                          );
+                        }
                         const odds = resolveOdds(c, p, 1.5);
                         const book =
                           c === '1'
