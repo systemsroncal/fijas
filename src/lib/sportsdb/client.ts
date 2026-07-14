@@ -97,11 +97,39 @@ export type SportsDbEvent = {
   strSport?: string;
   idHomeTeam?: string;
   idAwayTeam?: string;
-  strStatus?: string;
+  strStatus?: string | null;
+  strProgress?: string | null;
+  strVenue?: string | null;
+  strTime?: string | null;
+  strHomeTeamBadge?: string | null;
+  strAwayTeamBadge?: string | null;
+};
+
+export type SportsDbEventStat = {
+  idStatistic?: string;
+  idEvent?: string;
+  strStat?: string;
+  intHome?: string | null;
+  intAway?: string | null;
+};
+
+export type SportsDbTimelineItem = {
+  idTimeline?: string;
+  idEvent?: string;
+  strTimeline?: string;
+  strTimelineDetail?: string;
+  strHome?: string;
+  strPlayer?: string;
+  strAssist?: string;
+  intTime?: string;
+  strTeam?: string;
+  strComment?: string | null;
 };
 
 type TeamsResponse = { teams: SportsDbTeam[] | null };
 type EventsResponse = { event: SportsDbEvent[] | null; results?: SportsDbEvent[] | null };
+type EventStatsResponse = { eventstats: SportsDbEventStat[] | null };
+type TimelineResponse = { timeline: SportsDbTimelineItem[] | null };
 
 export function normalizeTeamQuery(name: string): string {
   return name
@@ -181,6 +209,45 @@ export async function searchEvent(home: string, away: string): Promise<SportsDbE
       return sb - sa;
     })[0] ?? null
   );
+}
+
+/** Detalle de evento (marcador / status). Usar bypassCache en live. */
+export async function lookupEvent(
+  eventId: string,
+  opts?: { bypassCache?: boolean }
+): Promise<SportsDbEvent | null> {
+  const data = await sportsDbFetch<EventsResponse>(
+    'lookupevent.php',
+    { id: eventId },
+    opts
+  );
+  return data?.event?.[0] ?? null;
+}
+
+/** Estadísticas del partido (tiros, posesión, etc.) — free V1. */
+export async function lookupEventStats(
+  eventId: string,
+  opts?: { bypassCache?: boolean }
+): Promise<SportsDbEventStat[]> {
+  const data = await sportsDbFetch<EventStatsResponse>(
+    'lookupeventstats.php',
+    { id: eventId },
+    opts
+  );
+  return data?.eventstats ?? [];
+}
+
+/** Timeline (goles, tarjetas, cambios) — free V1. */
+export async function lookupEventTimeline(
+  eventId: string,
+  opts?: { bypassCache?: boolean }
+): Promise<SportsDbTimelineItem[]> {
+  const data = await sportsDbFetch<TimelineResponse>(
+    'lookuptimeline.php',
+    { id: eventId },
+    opts
+  );
+  return data?.timeline ?? [];
 }
 
 export function findEventInDayList(

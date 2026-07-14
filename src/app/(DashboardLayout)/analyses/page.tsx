@@ -104,6 +104,8 @@ export default function AnalysesPage() {
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<StructuredMatchPayload | null>(null);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
+  /** Contexto del análisis abierto (para Reanalizar) */
+  const [activeAnalysis, setActiveAnalysis] = useState<Analysis | null>(null);
 
   const pendingAccumulators = useMemo(
     () => accumulators.filter((a) => !a.isAnalyzed),
@@ -161,20 +163,31 @@ export default function AnalysesPage() {
     refresh();
   }, []);
 
-  const run = async (override?: { mode?: Mode; matchId?: string }) => {
+  const run = async (override?: {
+    mode?: Mode;
+    matchId?: string;
+    accumulatorId?: string;
+    force?: boolean;
+  }) => {
     setError(null);
     setResultMsg(null);
     setSubTab('current');
 
     const activeMode = override?.mode ?? mode;
     const activeMatchId = override?.matchId ?? matchId;
+    const activeAccId = override?.accumulatorId ?? accumulatorId;
+    const force = Boolean(override?.force);
 
     if (activeMode === 'MATCH' && !activeMatchId) {
       setError('Selecciona un partido');
       return;
     }
-    if (activeMode === 'ACCUMULATOR' && !accumulatorId) {
+    if (activeMode === 'ACCUMULATOR' && !activeAccId && !force) {
       setError('Selecciona una combinada pendiente de analizar');
+      return;
+    }
+    if (activeMode === 'ACCUMULATOR' && !activeAccId) {
+      setError('Combinada no disponible para reanalizar');
       return;
     }
     if (activeMode === 'SUGGESTED' && !suggestedId) {
@@ -188,15 +201,21 @@ export default function AnalysesPage() {
       setMatchId(override.matchId);
     }
 
-    // enrich=true → LLM profundo (scrape + TheSportsDB + Poisson). TheSportsDB siempre en API.
+    // enrich=true → LLM profundo. force=true → reanalizar combinada ya analizada.
     const body =
       activeMode === 'MATCH'
         ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: true }
         : activeMode === 'RANDOM'
           ? { mode: 'RANDOM', provider, enrich: true }
           : activeMode === 'SUGGESTED'
-            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich: true }
-            : { mode: 'ACCUMULATOR', accumulatorId, provider, enrich: true };
+            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich: true, force }
+            : {
+                mode: 'ACCUMULATOR',
+                accumulatorId: activeAccId,
+                provider,
+                enrich: true,
+                force,
+              };
 
     try {
       const res = await fetch(apiUrl('/api/analyses'), {
@@ -218,13 +237,14 @@ export default function AnalysesPage() {
         setPayload(null);
       }
 
-      const a = data.analysis;
+      const a = data.analysis as Analysis | undefined;
+      if (a) setActiveAnalysis(a);
       setResultMsg(
-        `Riesgo: ${a?.riskScore} | EV: ${a?.evScore} | Stake: ${a?.recommendedStake} | ${a?.iaProvider}`
+        `${force || override?.matchId ? 'Reanálisis' : 'Análisis'}: Riesgo ${a?.riskScore} · EV ${a?.evScore} · Stake ${a?.recommendedStake} · ${a?.iaProvider}`
       );
 
-      if (activeMode === 'ACCUMULATOR') setAccumulatorId('');
-      if (activeMode === 'MATCH' && activeMatchId) setMatchId('');
+      if (activeMode === 'ACCUMULATOR' && !force) setAccumulatorId('');
+      if (activeMode === 'MATCH' && activeMatchId && !force) setMatchId('');
 
       await refresh();
     } catch (err) {
@@ -238,15 +258,43 @@ export default function AnalysesPage() {
     void run({ mode: 'MATCH', matchId: id });
   };
 
+  const reanalyzeFromHistory = (a: Analysis) => {
+    setActiveAnalysis(a);
+    if (a.match?.id && (a.mode === 'MATCH' || a.mode === 'RANDOM')) {
+      void run({ mode: 'MATCH', matchId: a.match.id, force: true });
+      return;
+    }
+    if (a.accumulator?.id) {
+      setMode('ACCUMULATOR');
+      setAccumulatorId(a.accumulator.id);
+      void run({ mode: 'ACCUMULATOR', accumulatorId: a.accumulator.id, force: true });
+      return;
+    }
+    setError('Este análisis no tiene partido/combinada para reanalizar.');
+  };
+
+  const reanalyzeCurrent = () => {
+    if (activeAnalysis) {
+      reanalyzeFromHistory(activeAnalysis);
+      return;
+    }
+    if (payload?.match?.id) {
+      void run({ mode: 'MATCH', matchId: payload.match.id, force: true });
+      return;
+    }
+    setError('No hay análisis activo para reanalizar.');
+  };
+
   const openHistory = (a: Analysis) => {
     setError(null);
     setResultMsg(null);
+    setActiveAnalysis(a);
     if (isMatchDashboardPayload(a.payload)) {
       setPayload(a.payload);
       setSubTab('current');
       return;
     }
-    setError('Este análisis antiguo no tiene dashboard. Genera uno nuevo.');
+    setError('Este análisis antiguo no tiene dashboard. Usa «Reanalizar».');
   };
 
   const analyzeLabel =
@@ -394,7 +442,12 @@ export default function AnalysesPage() {
 
               {payload && (
                 <Box>
-                  <MatchAnalysisDashboard payload={payload} onAnalyzeMatch={analyzeMatchById} />
+                  <MatchAnalysisDashboard
+                    payload={payload}
+                    onAnalyzeMatch={analyzeMatchById}
+                    onReanalyze={reanalyzeCurrent}
+                    reanalyzing={running}
+                  />
                   {mode === 'RANDOM' && (
                     <Button
                       sx={{ mt: 2 }}
@@ -456,11 +509,20 @@ export default function AnalysesPage() {
                             onClick={() => openHistory(a)}
                             disabled={!canDashboard}
                           >
-                            Ver en Actual
+                            Ver resultado
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => reanalyzeFromHistory(a)}
+                            disabled={running || (!a.match?.id && !a.accumulator?.id)}
+                          >
+                            {running ? '…' : 'Reanalizar'}
                           </Button>
                         </Stack>
                         <Typography variant="body2" color="textSecondary">
                           Riesgo {a.riskScore} · EV {a.evScore} · Stake {a.recommendedStake}
+                          {' · '}Al abrir verás marcador/stats (live o FT) + predicción guardada.
                         </Typography>
                       </CardContent>
                     </Card>

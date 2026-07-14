@@ -31,6 +31,7 @@ import {
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { withBrief } from '@/lib/ai/analysis-brief';
 import { sportLabel, teamMonogram, type SportKind } from '@/lib/match-display';
+import MatchResultStatsPanel from '@/components/analysis/MatchResultStatsPanel';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -92,9 +93,13 @@ function TeamBadge({
 export default function MatchAnalysisDashboard({
   payload,
   onAnalyzeMatch,
+  onReanalyze,
+  reanalyzing,
 }: {
   payload: StructuredMatchPayload;
   onAnalyzeMatch?: (matchId: string) => void;
+  onReanalyze?: () => void;
+  reanalyzing?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
@@ -177,11 +182,30 @@ export default function MatchAnalysisDashboard({
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" justifyContent="flex-end">
+      <Stack direction="row" justifyContent="flex-end" spacing={1} flexWrap="wrap">
+        {onReanalyze && (
+          <Button
+            variant="contained"
+            size="small"
+            onClick={onReanalyze}
+            disabled={reanalyzing}
+          >
+            {reanalyzing ? 'Reanalizando…' : 'Reanalizar'}
+          </Button>
+        )}
         <Button variant="outlined" size="small" onClick={exportPng} disabled={exporting}>
           {exporting ? 'Exportando…' : 'Exportar PNG'}
         </Button>
       </Stack>
+
+      <MatchResultStatsPanel
+        matchId={m?.id}
+        eventId={payload.sportsDb?.matchedEvent?.id}
+        homeTeam={m?.homeTeam}
+        awayTeam={m?.awayTeam}
+        sport={m?.sport}
+        date={payload.sportsDb?.matchedEvent?.date}
+      />
 
       <Box
         ref={ref}

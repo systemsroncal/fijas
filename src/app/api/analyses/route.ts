@@ -30,6 +30,8 @@ const schema = z
     matchId: z.string().optional(),
     provider: z.nativeEnum(AiProvider),
     enrich: z.boolean().optional().default(true),
+    /** Permite reanalizar una combinada ya marcada isAnalyzed */
+    force: z.boolean().optional().default(false),
   })
   .refine(
     (b) =>
@@ -442,11 +444,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Accumulator not found' }, { status: 404 });
     }
 
-    if (accumulator.isAnalyzed) {
+    if (accumulator.isAnalyzed && !body.force) {
       return NextResponse.json(
         {
           error:
-            'Esta combinada ya fue analizada. Elige otra o crea una nueva en el Creador de combinadas.',
+            'Esta combinada ya fue analizada. Usa «Reanalizar» o crea una nueva en el Creador.',
         },
         { status: 400 }
       );
