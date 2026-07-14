@@ -19,7 +19,8 @@ export const AI_HELP: Record<string, string[]> = {
   ],
   GEMINI: [
     'Ve a https://aistudio.google.com/apikey',
-    'Crea una API key de Google AI Studio',
+    'Crea una API key (nivel gratuito: pocos RPM/RPD)',
+    'Si ves 429: espera 1–2 min, cambia de proveedor, o activa facturación en AI Studio',
     'Copia y guarda la clave',
   ],
   GROK: [

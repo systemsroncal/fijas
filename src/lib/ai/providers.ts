@@ -19,7 +19,8 @@ export const AI_PROVIDERS: {
     label: 'Google Gemini',
     helpSteps: [
       'Ve a https://aistudio.google.com/apikey',
-      'Crea una API key de Google AI Studio',
+      'Crea una API key de Google AI Studio (nivel gratuito tiene pocos RPM/RPD)',
+      'Si ves error 429: espera 1–2 min, cambia de proveedor, o activa facturación en AI Studio',
       'Copia y guarda la clave',
     ],
   },
@@ -161,8 +162,8 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
     }),
   },
   GEMINI: {
-    url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    model: 'gemini-2.0-flash',
+    url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    model: 'gemini-2.5-flash',
     buildHeaders: () => ({ 'Content-Type': 'application/json' }),
     buildBody: (messages) => ({
       contents: messages
@@ -231,8 +232,40 @@ const NVIDIA_MODEL_FALLBACKS = [
   'meta/llama-3.1-8b-instruct',
 ] as const;
 
+/** Modelos Gemini con cuota a veces separada (mismo API key). */
+const GEMINI_MODEL_FALLBACKS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+] as const;
+
 function isNvidiaDegradedError(status: number, body: string): boolean {
   return status === 400 && /DEGRADED function cannot be invoked/i.test(body);
+}
+
+function isQuotaError(status: number, body: string): boolean {
+  return (
+    status === 429 ||
+    /RESOURCE_EXHAUSTED|exceeded your current quota|TooManyRequests|rate.?limit/i.test(
+      body
+    )
+  );
+}
+
+function geminiQuotaMessage(): string {
+  return (
+    'GEMINI: cuota gratuita agotada (429). Espera 1–2 minutos e inténtalo de nuevo, ' +
+    'usa otro proveedor (p. ej. NVIDIA), o activa facturación en Google AI Studio → Facturación.'
+  );
+}
+
+function wait(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+function geminiGenerateUrl(model: string, apiKey: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
 }
 
 /**
@@ -300,7 +333,7 @@ async function callOpenAiCompatOnce(
 
 /**
  * Llama al proveedor de IA con mensajes chat.
- * En NVIDIA, si un modelo está DEGRADED, prueba otros del mismo proveedor.
+ * NVIDIA: fallback si DEGRADED. Gemini: reintento corto + otros modelos si 429.
  */
 export async function callProvider(
   provider: AiProvider,
@@ -308,17 +341,13 @@ export async function callProvider(
   messages: ChatMessage[]
 ): Promise<string> {
   const config = PROVIDER_CONFIG[provider];
-  let url = config.url;
-  if (provider === 'GEMINI') {
-    url = `${config.url}?key=${encodeURIComponent(apiKey)}`;
-  }
 
   if (provider === 'NVIDIA') {
     let lastErr: Error | null = null;
     for (const model of NVIDIA_MODEL_FALLBACKS) {
       try {
         return await callOpenAiCompatOnce(
-          url,
+          config.url,
           config.buildHeaders(apiKey),
           {
             model,
@@ -333,9 +362,8 @@ export async function callProvider(
         const e = err as Error & { status?: number; body?: string };
         lastErr = e;
         if (isNvidiaDegradedError(e.status ?? 0, e.body ?? e.message)) {
-          continue; // siguiente modelo NIM
+          continue;
         }
-        // 404 modelo inexistente → seguir; otros errores → abortar
         if (e.status === 404 || /model.*(not found|does not exist)/i.test(e.body ?? '')) {
           continue;
         }
@@ -344,12 +372,67 @@ export async function callProvider(
     }
     throw new Error(
       lastErr?.message ??
-        'NVIDIA: todos los modelos NIM estánaron (DEGRADED). Prueba Gemini u otro proveedor, o reintenta más tarde.'
+        'NVIDIA: todos los modelos NIM fallaron (DEGRADED). Prueba Gemini u otro proveedor, o reintenta más tarde.'
     );
   }
 
+  if (provider === 'GEMINI') {
+    const body = config.buildBody(messages);
+    let sawQuota = false;
+    let lastErr: Error | null = null;
+
+    for (let i = 0; i < GEMINI_MODEL_FALLBACKS.length; i++) {
+      const model = GEMINI_MODEL_FALLBACKS[i];
+      const url = geminiGenerateUrl(model, apiKey);
+      try {
+        return await callOpenAiCompatOnce(
+          url,
+          config.buildHeaders(apiKey),
+          body,
+          provider,
+          config.extractText
+        );
+      } catch (err) {
+        const e = err as Error & { status?: number; body?: string };
+        lastErr = e;
+        const status = e.status ?? 0;
+        const errBody = e.body ?? e.message;
+
+        if (isQuotaError(status, errBody)) {
+          sawQuota = true;
+          if (i === 0) {
+            await wait(8_000);
+            try {
+              return await callOpenAiCompatOnce(
+                url,
+                config.buildHeaders(apiKey),
+                body,
+                provider,
+                config.extractText
+              );
+            } catch (retryErr) {
+              lastErr = retryErr as Error & { status?: number; body?: string };
+            }
+          }
+          continue;
+        }
+
+        if (
+          status === 404 ||
+          /not found|NOT_FOUND|is not found for API version/i.test(errBody)
+        ) {
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (sawQuota) throw new Error(geminiQuotaMessage());
+    throw lastErr ?? new Error(geminiQuotaMessage());
+  }
+
   return callOpenAiCompatOnce(
-    url,
+    config.url,
     config.buildHeaders(apiKey),
     config.buildBody(messages),
     provider,
