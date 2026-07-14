@@ -75,24 +75,39 @@ function SportIcon({ sport }: { sport?: string }) {
 function TeamBadge({
   name,
   crestUrl,
+  hideCrest,
 }: {
   name: string;
   crestUrl?: string | null;
+  /** Durante export PNG: solo monograma (evita CORS / img rotas) */
+  hideCrest?: boolean;
 }) {
-  const src = proxiedMediaUrl(crestUrl);
+  const src = hideCrest ? undefined : proxiedMediaUrl(crestUrl);
   return (
     <Stack direction="row" spacing={1} alignItems="center">
       <Avatar
         src={src}
         alt={name}
-        imgProps={{ crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' }}
         sx={{ width: 36, height: 36, fontSize: 13, bgcolor: 'primary.main', fontWeight: 700 }}
       >
-        {!src ? teamMonogram(name) : null}
+        {teamMonogram(name)}
       </Avatar>
       <Typography fontWeight={700}>{name}</Typography>
     </Stack>
   );
+}
+
+function waitFrames(n = 2) {
+  return new Promise<void>((resolve) => {
+    const step = (left: number) => {
+      if (left <= 0) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(() => step(left - 1));
+    };
+    step(n);
+  });
 }
 
 /**
@@ -176,28 +191,43 @@ export default function MatchAnalysisDashboard({
     setExporting(true);
     setExportError(null);
     try {
+      // 1) Quitar escudos del DOM (monogramas) antes de capturar
+      await waitFrames(3);
+      await new Promise((r) => setTimeout(r, 50));
+
       const { toPng } = await import('html-to-image');
-      // Escudos van por /api/media/proxy (same-origin) para evitar CORS de r2.thesportsdb.com
-      const dataUrl = await toPng(ref.current, {
-        cacheBust: true,
+      const root = ref.current;
+      if (!root) throw new Error('No hay contenido para exportar');
+
+      // 2) Por si queda algún <img>, ocultarlo en el árbol (ApexCharts / Avatar residual)
+      const imgs = Array.from(root.querySelectorAll('img'));
+      const prev = imgs.map((img) => ({
+        img,
+        src: img.getAttribute('src'),
+        display: img.style.display,
+      }));
+      for (const img of imgs) {
+        img.removeAttribute('src');
+        img.style.display = 'none';
+      }
+
+      const dataUrl = await toPng(root, {
+        cacheBust: false,
         pixelRatio: 2,
         backgroundColor: '#ffffff',
+        skipFonts: true,
         filter: (node) => {
-          if (!(node instanceof HTMLElement)) return true;
-          if (node.tagName === 'IMG') {
-            const src = (node as HTMLImageElement).currentSrc || (node as HTMLImageElement).src;
-            if (!src) return true;
-            if (src.startsWith('data:') || src.startsWith('blob:')) return true;
-            try {
-              const host = new URL(src, window.location.href).hostname;
-              return host === window.location.hostname || src.includes('/api/media/proxy');
-            } catch {
-              return false;
-            }
-          }
+          if (node instanceof HTMLImageElement) return false;
+          if (node instanceof HTMLElement && node.dataset.exportIgnore === '1') return false;
           return true;
         },
       });
+
+      for (const p of prev) {
+        if (p.src) p.img.setAttribute('src', p.src);
+        p.img.style.display = p.display;
+      }
+
       const a = document.createElement('a');
       const fileName = m ? `${m.homeTeam}-vs-${m.awayTeam}` : 'analisis';
       a.download = `${fileName.replace(/\s+/g, '_')}-analisis.png`;
@@ -206,9 +236,7 @@ export default function MatchAnalysisDashboard({
     } catch (err) {
       console.error(err);
       setExportError(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo exportar el PNG (prueba recargar y vuelve a intentar).'
+        'No se pudo exportar el PNG. Si persiste, recarga la página e inténtalo de nuevo.'
       );
     } finally {
       setExporting(false);
@@ -287,11 +315,19 @@ export default function MatchAnalysisDashboard({
                   spacing={2}
                   alignItems={{ md: 'center' }}
                 >
-                  <TeamBadge name={m.homeTeam} crestUrl={m.homeCrestUrl} />
+                  <TeamBadge
+                    name={m.homeTeam}
+                    crestUrl={m.homeCrestUrl}
+                    hideCrest={exporting}
+                  />
                   <Typography color="text.secondary" fontWeight={600}>
                     vs
                   </Typography>
-                  <TeamBadge name={m.awayTeam} crestUrl={m.awayCrestUrl} />
+                  <TeamBadge
+                    name={m.awayTeam}
+                    crestUrl={m.awayCrestUrl}
+                    hideCrest={exporting}
+                  />
                 </Stack>
               ) : (
                 <Typography variant="h5" fontWeight={700}>
@@ -477,8 +513,7 @@ export default function MatchAnalysisDashboard({
                     >
                       <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
                         <Avatar
-                          src={proxiedMediaUrl(b.badge)}
-                          imgProps={{ crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' }}
+                          src={exporting ? undefined : proxiedMediaUrl(b.badge)}
                           sx={{ width: 28, height: 28, fontSize: 11 }}
                         >
                           {(b.name ?? String(side)).slice(0, 2)}
