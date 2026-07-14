@@ -273,6 +273,25 @@ export const SPORT_OPTIONS: Array<{ id: SportKind | ''; label: string }> = [
 ];
 
 /**
+ * Women / W → F (femenino) en ligas y nombres.
+ * No toca "W.C" (World Cup) ni "WC" a secas ambiguo tipo FIFA W.C.
+ */
+export function formatFemeninoLabel(text: string): string {
+  if (!text) return text;
+  let s = text;
+  s = s.replace(/\bWomen'?s?\b/gi, 'Femenino');
+  s = s.replace(/\bWomens\b/gi, 'Femenino');
+  s = s.replace(/\bWoman\b/gi, 'Femenino');
+  s = s.replace(/\bWWC\b/gi, 'Mundial F');
+  s = s.replace(/\(W\)/gi, '(F)');
+  s = s.replace(/\[W\]/gi, '[F]');
+  s = s.replace(/-W\b/g, '-F');
+  // "ENG W", " SPA W ", sufijo " W" — no "W.C" / "W."
+  s = s.replace(/(^|[\s/])W(?=$|[\s/])/g, '$1F');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Infere deporte desde liga / texto (conservador: default fútbol).
  */
 export function detectSport(league: string, note?: string | null): SportKind {

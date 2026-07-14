@@ -338,7 +338,8 @@ export async function POST(request: Request) {
         })
         .filter(
           (m) =>
-            !isJunkMatch(m.homeTeam, m.awayTeam) && isMatchStillOpen(date, m.kickoff, now)
+            !isJunkMatch(m.homeTeam, m.awayTeam) &&
+            isMatchStillOpen(date, m.kickoff, now, 2.25, { isLive: m.isLive })
         );
       if (valid.length === 0) {
         return NextResponse.json(

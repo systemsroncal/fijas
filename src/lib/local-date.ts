@@ -27,22 +27,30 @@ export function parseKickoffHm(kickoff: string | null | undefined): {
 }
 
 /**
- * True si el partido aún no debería ocultarse:
- * - sin hora → se muestra
- * - con hora → visible hasta kickoff + durationHours (default 2.5h)
+ * True si el partido aún no debería ocultarse (pendiente / en curso).
+ * - día futuro → visible
+ * - día pasado → oculto
+ * - hoy con hora → visible hasta kickoff + durationHours (default 2.25h)
+ * - hoy sin hora → se oculta desde las 20:00 local (evita partidos ya jugados sin kickoff)
+ * - isLive → visible aunque haya pasado la ventana
  */
 export function isMatchStillOpen(
   matchDateYmd: string,
   kickoff: string | null | undefined,
   now = new Date(),
-  durationHours = 2.5
+  durationHours = 2.25,
+  opts?: { isLive?: boolean }
 ): boolean {
   const today = localDateISO(now);
   if (matchDateYmd > today) return true;
   if (matchDateYmd < today) return false;
+  if (opts?.isLive) return true;
 
   const hm = parseKickoffHm(kickoff);
-  if (!hm) return true; // sin hora: no filtramos
+  if (!hm) {
+    // Sin hora scrapeada: no dejar partidos fantasma toda la noche
+    return now.getHours() < 20;
+  }
 
   const start = new Date(now);
   start.setHours(hm.hours, hm.minutes, 0, 0);

@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-guard';
-import { detectSport, isJunkMatch, repairMisparsedMatch, type SportKind } from '@/lib/match-display';
+import {
+  detectSport,
+  formatFemeninoLabel,
+  isJunkMatch,
+  repairMisparsedMatch,
+  type SportKind,
+} from '@/lib/match-display';
 import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
 
 /**
@@ -45,6 +51,7 @@ export async function GET(request: Request) {
   });
 
   const now = new Date();
+  const today = localDateISO(now);
   const repaired = matches.map((m) => {
     const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
     const fixed = repairMisparsedMatch({
@@ -55,8 +62,9 @@ export async function GET(request: Request) {
     });
     return {
       ...m,
-      homeTeam: fixed.homeTeam,
-      awayTeam: fixed.awayTeam,
+      homeTeam: formatFemeninoLabel(fixed.homeTeam),
+      awayTeam: formatFemeninoLabel(fixed.awayTeam),
+      league: formatFemeninoLabel(m.league),
       kickoff: fixed.kickoff ?? m.kickoff,
       sport: detectSport(m.league, note),
     };
@@ -66,7 +74,14 @@ export async function GET(request: Request) {
   const seen = new Set<string>();
   const filtered = repaired.filter((m) => {
     if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
-    if (hideFinished && !isMatchStillOpen(date, m.kickoff, now)) return false;
+    // Solo ocultar finalizados cuando se lista el día de hoy (historial de otras fechas se muestra)
+    if (
+      hideFinished &&
+      date === today &&
+      !isMatchStillOpen(date, m.kickoff, now, 2.25, { isLive: m.isLive })
+    ) {
+      return false;
+    }
     if (sportFilter && m.sport !== sportFilter) return false;
     const key = `${m.homeTeam}|${m.awayTeam}|${m.league}`.toLowerCase();
     if (seen.has(key)) return false;
