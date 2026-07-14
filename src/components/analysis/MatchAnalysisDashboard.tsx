@@ -32,6 +32,7 @@ import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { withBrief } from '@/lib/ai/analysis-brief';
 import { sportLabel, teamMonogram, type SportKind } from '@/lib/match-display';
 import MatchResultStatsPanel from '@/components/analysis/MatchResultStatsPanel';
+import { proxiedMediaUrl } from '@/lib/media-proxy';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -73,14 +74,16 @@ function TeamBadge({
   name: string;
   crestUrl?: string | null;
 }) {
+  const src = proxiedMediaUrl(crestUrl);
   return (
     <Stack direction="row" spacing={1} alignItems="center">
       <Avatar
-        src={crestUrl || undefined}
+        src={src}
         alt={name}
+        imgProps={{ crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' }}
         sx={{ width: 36, height: 36, fontSize: 13, bgcolor: 'primary.main', fontWeight: 700 }}
       >
-        {!crestUrl ? teamMonogram(name) : null}
+        {!src ? teamMonogram(name) : null}
       </Avatar>
       <Typography fontWeight={700}>{name}</Typography>
     </Stack>
@@ -103,6 +106,7 @@ export default function MatchAnalysisDashboard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const theme = useTheme();
   const valid = Boolean(
     payload?.probs && Array.isArray(payload.markets) && payload.scoreline
@@ -149,6 +153,50 @@ export default function MatchAnalysisDashboard({
     { name: 'Prob. modelo', data: edgeMarkets.map((r) => Math.round(r.aiProb * 10) / 10) },
   ];
 
+  const exportPng = async () => {
+    if (!ref.current) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { toPng } = await import('html-to-image');
+      // Escudos van por /api/media/proxy (same-origin) para evitar CORS de r2.thesportsdb.com
+      const dataUrl = await toPng(ref.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        filter: (node) => {
+          if (!(node instanceof HTMLElement)) return true;
+          if (node.tagName === 'IMG') {
+            const src = (node as HTMLImageElement).currentSrc || (node as HTMLImageElement).src;
+            if (!src) return true;
+            if (src.startsWith('data:') || src.startsWith('blob:')) return true;
+            try {
+              const host = new URL(src, window.location.href).hostname;
+              return host === window.location.hostname || src.includes('/api/media/proxy');
+            } catch {
+              return false;
+            }
+          }
+          return true;
+        },
+      });
+      const a = document.createElement('a');
+      const fileName = m ? `${m.homeTeam}-vs-${m.awayTeam}` : 'analisis';
+      a.download = `${fileName.replace(/\s+/g, '_')}-analisis.png`;
+      a.href = dataUrl;
+      a.click();
+    } catch (err) {
+      console.error(err);
+      setExportError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo exportar el PNG (prueba recargar y vuelve a intentar).'
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (!valid) {
     return (
       <Alert severity="warning" variant="outlined">
@@ -157,28 +205,6 @@ export default function MatchAnalysisDashboard({
       </Alert>
     );
   }
-
-  const exportPng = async () => {
-    if (!ref.current) return;
-    setExporting(true);
-    try {
-      const { toPng } = await import('html-to-image');
-      const dataUrl = await toPng(ref.current, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-      });
-      const a = document.createElement('a');
-      const name = m ? `${m.homeTeam}-vs-${m.awayTeam}` : 'analisis';
-      a.download = `${name.replace(/\s+/g, '_')}-analisis.png`;
-      a.href = dataUrl;
-      a.click();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setExporting(false);
-    }
-  };
 
   return (
     <Stack spacing={2}>
@@ -193,10 +219,15 @@ export default function MatchAnalysisDashboard({
             {reanalyzing ? 'Reanalizando…' : 'Reanalizar'}
           </Button>
         )}
-        <Button variant="outlined" size="small" onClick={exportPng} disabled={exporting}>
+        <Button variant="outlined" size="small" onClick={() => void exportPng()} disabled={exporting}>
           {exporting ? 'Exportando…' : 'Exportar PNG'}
         </Button>
       </Stack>
+      {exportError && (
+        <Alert severity="error" onClose={() => setExportError(null)}>
+          {exportError}
+        </Alert>
+      )}
 
       <MatchResultStatsPanel
         matchId={m?.id}
@@ -428,7 +459,8 @@ export default function MatchAnalysisDashboard({
                     >
                       <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
                         <Avatar
-                          src={b.badge || undefined}
+                          src={proxiedMediaUrl(b.badge)}
+                          imgProps={{ crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' }}
                           sx={{ width: 28, height: 28, fontSize: 11 }}
                         >
                           {(b.name ?? String(side)).slice(0, 2)}
