@@ -1,79 +1,71 @@
-import { useMediaQuery, Box, Drawer } from "@mui/material";
-import SidebarItems from "./SidebarItems";
-
-
+import { useMediaQuery, Box, Drawer, IconButton } from '@mui/material';
+import { IconX } from '@tabler/icons-react';
+import SidebarItems from './SidebarItems';
 
 interface ItemType {
   isMobileSidebarOpen: boolean;
   onSidebarClose: (event: React.MouseEvent<HTMLElement>) => void;
   isSidebarOpen: boolean;
+  onToggleDesktopSidebar?: () => void;
 }
 
 const MSidebar = ({
   isMobileSidebarOpen,
   onSidebarClose,
   isSidebarOpen,
+  onToggleDesktopSidebar,
 }: ItemType) => {
-  const lgUp = useMediaQuery((theme: any) => theme.breakpoints.up("lg"));
+  const lgUp = useMediaQuery((theme: any) => theme.breakpoints.up('lg'));
+  const sidebarWidth = 270;
 
-  const sidebarWidth = "270px";
-
-  // Custom CSS for short scrollbar
   const scrollbarStyles = {
-    '&::-webkit-scrollbar': {
-      width: '7px',
-
-    },
+    '&::-webkit-scrollbar': { width: '7px' },
     '&::-webkit-scrollbar-thumb': {
       backgroundColor: '#eff2f7',
       borderRadius: '15px',
     },
   };
 
-
   if (lgUp) {
     return (
       <Box
         sx={{
-          width: sidebarWidth,
+          width: isSidebarOpen ? sidebarWidth : 0,
           flexShrink: 0,
+          transition: 'width 0.2s ease',
         }}
       >
-        {/* ------------------------------------------- */}
-        {/* Sidebar for desktop */}
-        {/* ------------------------------------------- */}
         <Drawer
           anchor="left"
           open={isSidebarOpen}
-          variant="permanent"
+          variant="persistent"
           slotProps={{
             paper: {
               sx: {
-                boxSizing: "border-box",
+                boxSizing: 'border-box',
                 ...scrollbarStyles,
                 width: sidebarWidth,
+                borderRight: '1px solid',
+                borderColor: 'divider',
               },
-            }
+            },
           }}
         >
-          {/* ------------------------------------------- */}
-          {/* Sidebar Box */}
-          {/* ------------------------------------------- */}
-          <Box
-            sx={{
-              height: "100%",
-            }}
-          >
-
-            <Box>
-              {/* ------------------------------------------- */}
-              {/* Sidebar Items */}
-              {/* ------------------------------------------- */}
-              <SidebarItems />
-            </Box>
+          <Box sx={{ position: 'relative', height: '100%' }}>
+            {onToggleDesktopSidebar && (
+              <IconButton
+                size="small"
+                aria-label="Cerrar menú"
+                onClick={onToggleDesktopSidebar}
+                sx={{ position: 'absolute', right: 8, top: 18, zIndex: 2 }}
+              >
+                <IconX size={18} />
+              </IconButton>
+            )}
+            <SidebarItems />
           </Box>
         </Drawer>
-      </Box >
+      </Box>
     );
   }
 
@@ -83,35 +75,29 @@ const MSidebar = ({
       open={isMobileSidebarOpen}
       onClose={onSidebarClose}
       variant="temporary"
-
       slotProps={{
         paper: {
           sx: {
             boxShadow: (theme) => theme.shadows[8],
             ...scrollbarStyles,
+            width: sidebarWidth,
           },
-        }
+        },
       }}
     >
-      {/* ------------------------------------------- */}
-      {/* Sidebar Box */}
-      {/* ------------------------------------------- */}
-      <Box>
-        {/* ------------------------------------------- */}
-        {/* Sidebar Items */}
-        {/* ------------------------------------------- */}
+      <Box sx={{ position: 'relative' }}>
+        <IconButton
+          size="small"
+          aria-label="Cerrar menú"
+          onClick={onSidebarClose}
+          sx={{ position: 'absolute', right: 8, top: 18, zIndex: 2 }}
+        >
+          <IconX size={18} />
+        </IconButton>
         <SidebarItems />
       </Box>
-      {/* ------------------------------------------- */}
-      {/* Sidebar For Mobile */}
-      {/* ------------------------------------------- */}
     </Drawer>
   );
 };
 
 export default MSidebar;
-
-
-
-
-

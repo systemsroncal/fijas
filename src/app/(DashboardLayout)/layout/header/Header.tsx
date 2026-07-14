@@ -1,20 +1,14 @@
 import React from 'react';
 import { Box, AppBar, Toolbar, styled, Stack, IconButton, Badge } from '@mui/material';
-import PropTypes from 'prop-types';
-// components
 import Profile from './Profile';
-import { IconBellRinging, IconMenu } from '@tabler/icons-react';
+import { IconBellRinging, IconMenu2 } from '@tabler/icons-react';
 
 interface ItemType {
-  toggleMobileSidebar:  (event: React.MouseEvent<HTMLElement>) => void;
+  /** Abre/cierra sidebar (móvil y escritorio) */
+  toggleSidebar: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
-const Header = ({toggleMobileSidebar}: ItemType) => {
-
-  // const lgUp = useMediaQuery((theme) => theme.breakpoints.up('lg'));
-  // const lgDown = useMediaQuery((theme) => theme.breakpoints.down('lg'));
-
-
+const Header = ({ toggleSidebar }: ItemType) => {
   const AppBarStyled = styled(AppBar)(({ theme }) => ({
     boxShadow: 'none',
     background: theme.palette.background.paper,
@@ -34,22 +28,17 @@ const Header = ({toggleMobileSidebar}: ItemType) => {
       <ToolbarStyled>
         <IconButton
           color="inherit"
-          aria-label="menu"
-          onClick={toggleMobileSidebar}
-          sx={{
-            display: {
-              lg: "none",
-              xs: "inline",
-            },
-          }}
+          aria-label="Abrir o cerrar menú"
+          onClick={toggleSidebar}
+          edge="start"
+          sx={{ mr: 1 }}
         >
-          <IconMenu width="20" height="20" />
+          <IconMenu2 width="22" height="22" />
         </IconButton>
-
 
         <IconButton
           size="large"
-          aria-label="show 11 new notifications"
+          aria-label="notificaciones"
           color="inherit"
           aria-controls="msgs-menu"
           aria-haspopup="true"
@@ -57,7 +46,6 @@ const Header = ({toggleMobileSidebar}: ItemType) => {
           <Badge variant="dot" color="primary">
             <IconBellRinging size="21" stroke="1.5" />
           </Badge>
-
         </IconButton>
         <Box flexGrow={1} />
         <Stack spacing={1} direction="row" alignItems="center">
@@ -66,10 +54,6 @@ const Header = ({toggleMobileSidebar}: ItemType) => {
       </ToolbarStyled>
     </AppBarStyled>
   );
-};
-
-Header.propTypes = {
-  sx: PropTypes.object,
 };
 
 export default Header;

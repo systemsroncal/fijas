@@ -247,6 +247,80 @@ function isBlankStat(v: string | undefined): boolean {
   return !v || v === '—' || v === '-' || v === 'null';
 }
 
+function numStat(
+  byKey: Map<string, { name: string; home: string; away: string; key: string }>,
+  matchers: string[]
+): { home: number; away: number } | null {
+  for (const [key, row] of Array.from(byKey.entries())) {
+    if (!matchers.some((m) => key === m || key.includes(m))) continue;
+    if (isBlankStat(row.home) && isBlankStat(row.away)) continue;
+    return {
+      home: Number(row.home) || 0,
+      away: Number(row.away) || 0,
+    };
+  }
+  return null;
+}
+
+/**
+ * Si "Total Shots" viene vacío, súmalo desde a puerta + fuera + bloqueados
+ * (o insidebox + outsidebox como respaldo).
+ */
+function fillTotalShotsFromParts(
+  byKey: Map<string, { name: string; home: string; away: string; key: string }>
+) {
+  const on = numStat(byKey, ['shots on goal', 'shots on target']);
+  const off = numStat(byKey, ['shots off goal', 'shots off target']);
+  const blocked = numStat(byKey, ['blocked shots']);
+  const inside = numStat(byKey, ['shots insidebox', 'shots inside box']);
+  const outside = numStat(byKey, ['shots outsidebox', 'shots outside box']);
+
+  let home = 0;
+  let away = 0;
+  let has = false;
+
+  if (on || off || blocked) {
+    home = (on?.home ?? 0) + (off?.home ?? 0) + (blocked?.home ?? 0);
+    away = (on?.away ?? 0) + (off?.away ?? 0) + (blocked?.away ?? 0);
+    has = true;
+  } else if (inside || outside) {
+    home = (inside?.home ?? 0) + (outside?.home ?? 0);
+    away = (inside?.away ?? 0) + (outside?.away ?? 0);
+    has = true;
+  }
+
+  if (!has) return;
+
+  const existing = Array.from(byKey.entries()).find(
+    ([k]) => k === 'total shots' || k.includes('total shots')
+  );
+  if (existing) {
+    const [key, row] = existing;
+    if (isBlankStat(row.home) || isBlankStat(row.away)) {
+      byKey.set(key, {
+        ...row,
+        key: 'total shots',
+        name: translateStatName('total shots'),
+        home: isBlankStat(row.home) ? String(home) : row.home,
+        away: isBlankStat(row.away) ? String(away) : row.away,
+      });
+    } else {
+      // Si API trae total pero es menor que la suma de partes, usar el máximo
+      const eh = Number(row.home) || 0;
+      const ea = Number(row.away) || 0;
+      if (home > eh || away > ea) {
+        byKey.set(key, {
+          ...row,
+          home: String(Math.max(eh, home)),
+          away: String(Math.max(ea, away)),
+        });
+      }
+    }
+  } else {
+    upsertStat(byKey, 'total shots', String(home), String(away), false);
+  }
+}
+
 function upsertStat(
   byKey: Map<string, { name: string; home: string; away: string; key: string }>,
   key: string,
@@ -322,6 +396,9 @@ function mapStats(
     );
   }
 
+  // Tiros totales = a puerta + fuera + bloqueados (si la API deja "—")
+  fillTotalShotsFromParts(byKey);
+
   // Garantizar filas clave; posesión/córners pueden quedar — si la API no los manda
   const existingKeys = Array.from(byKey.keys());
   for (const p of PRIORITY_STAT_KEYS) {
@@ -334,6 +411,9 @@ function mapStats(
       });
     }
   }
+
+  // Reintentar tras placeholders (por si total shots se creó vacío)
+  fillTotalShotsFromParts(byKey);
 
   // Unificar duplicados (yellow card / yellow cards)
   const yellowKeys = Array.from(byKey.keys()).filter((k) => k.includes('yellow'));

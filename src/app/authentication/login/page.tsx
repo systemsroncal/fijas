@@ -70,7 +70,7 @@ const Login2 = () => {
                       variant="h6"
                       fontWeight="500"
                     >
-                      New to Modernize?
+                      ¿Nuevo en LAS FIJAS?
                     </Typography>
                     <Typography
                       component={Link}

@@ -1,21 +1,35 @@
-import Link from "next/link";
-import { styled } from "@mui/material";
-import Image from "next/image";
-
-const LinkStyled = styled(Link)(() => ({
-  height: "70px",
-  width: "180px",
-  overflow: "hidden",
-  display: "block",
-}));
+import Link from 'next/link';
+import { Box, Typography } from '@mui/material';
 
 const Logo = () => {
   return (
-    <LinkStyled href="/">
-      <Image src="/images/logos/dark-logo.svg" alt="logo" height={70} width={174} priority />
-    </LinkStyled>
+    <Box
+      component={Link}
+      href="/"
+      sx={{
+        height: 70,
+        minWidth: 160,
+        display: 'flex',
+        alignItems: 'center',
+        textDecoration: 'none',
+        color: 'inherit',
+        px: 1,
+      }}
+    >
+      <Typography
+        component="span"
+        sx={{
+          fontWeight: 800,
+          fontSize: '1.35rem',
+          letterSpacing: '0.04em',
+          color: 'primary.main',
+          lineHeight: 1.1,
+        }}
+      >
+        LAS FIJAS
+      </Typography>
+    </Box>
   );
 };
 
 export default Logo;
-  
