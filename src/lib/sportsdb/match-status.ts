@@ -81,6 +81,28 @@ function parseScore(ev: SportsDbEvent | null): {
   };
 }
 
+/** true = local, false = visitante, null = desconocido */
+function timelineSide(
+  r: SportsDbTimelineItem,
+  homeTeamName?: string | null,
+  awayTeamName?: string | null
+): boolean | null {
+  const homeFlag = (r.strHome ?? '').toLowerCase();
+  if (homeFlag === 'yes') return true;
+  if (homeFlag === 'no') return false;
+
+  const team = (r.strTeam ?? '').toLowerCase().trim();
+  if (!team) return null;
+  const home = (homeTeamName ?? '').toLowerCase();
+  const away = (awayTeamName ?? '').toLowerCase();
+  if (home && (team === home || team.includes(home) || home.includes(team))) return true;
+  if (away && (team === away || team.includes(away) || away.includes(team))) return false;
+  // fallback por prefijo corto (p.ej. France / Spain)
+  if (home.length >= 4 && team.includes(home.slice(0, 4))) return true;
+  if (away.length >= 4 && team.includes(away.slice(0, 4))) return false;
+  return null;
+}
+
 /**
  * Reconstruye marcador desde timeline (más fresco que lookupevent a veces).
  */
@@ -105,19 +127,10 @@ export function scoreFromTimelineGoals(
     if (detail.includes('missed')) continue;
 
     const isOwn = detail.includes('own');
-    const homeFlag = (r.strHome ?? '').toLowerCase();
-    const team = (r.strTeam ?? '').toLowerCase();
-
-    let forHome: boolean | null = null;
-    if (homeFlag === 'yes') forHome = !isOwn;
-    else if (homeFlag === 'no') forHome = isOwn;
-    else if (homeTeamName && team && team.includes(homeTeamName.toLowerCase().slice(0, 5))) {
-      forHome = !isOwn;
-    } else if (awayTeamName && team && team.includes(awayTeamName.toLowerCase().slice(0, 5))) {
-      forHome = isOwn;
-    }
-
+    let forHome = timelineSide(r, homeTeamName, awayTeamName);
     if (forHome == null) continue;
+    if (isOwn) forHome = !forHome;
+
     if (forHome) home += 1;
     else away += 1;
     counted += 1;
@@ -125,6 +138,69 @@ export function scoreFromTimelineGoals(
 
   if (!counted) return null;
   return { homeScore: home, awayScore: away };
+}
+
+/** Tarjetas y tiros a puerta mínimos derivados de la cronología. */
+export function deriveStatsFromTimeline(
+  rows: SportsDbTimelineItem[],
+  homeTeamName?: string | null,
+  awayTeamName?: string | null
+): {
+  yellowHome: number;
+  yellowAway: number;
+  redHome: number;
+  redAway: number;
+  shotsOnGoalHome: number;
+  shotsOnGoalAway: number;
+} {
+  let yellowHome = 0;
+  let yellowAway = 0;
+  let redHome = 0;
+  let redAway = 0;
+  let shotsOnGoalHome = 0;
+  let shotsOnGoalAway = 0;
+
+  for (const r of rows) {
+    const type = (r.strTimeline ?? '').toLowerCase();
+    const detail = (r.strTimelineDetail ?? '').toLowerCase();
+    const side = timelineSide(r, homeTeamName, awayTeamName);
+    if (side == null) continue;
+
+    const isCard =
+      type === 'card' || detail.includes('yellow') || detail.includes('red card');
+    if (isCard) {
+      const secondYellow = detail.includes('second yellow');
+      const red = detail.includes('red') && !detail.includes('yellow');
+      const yellow = detail.includes('yellow') || secondYellow;
+      if (yellow) {
+        if (side) yellowHome += 1;
+        else yellowAway += 1;
+      }
+      if (red || secondYellow) {
+        if (side) redHome += 1;
+        else redAway += 1;
+      }
+    }
+
+    // Gol / penalti = al menos 1 tiro a puerta del equipo que anota
+    const isGoal =
+      (type === 'goal' || detail.includes('normal goal') || detail === 'penalty') &&
+      !detail.includes('missed') &&
+      !detail.includes('own');
+    if (isGoal) {
+      if (side) shotsOnGoalHome += 1;
+      else shotsOnGoalAway += 1;
+    }
+  }
+
+  return {
+    yellowHome,
+    yellowAway,
+    redHome,
+    redAway,
+    shotsOnGoalHome,
+    shotsOnGoalAway,
+  };
 }
 
 export function classifyPhase(
@@ -167,7 +243,52 @@ export function classifyPhase(
   return s ? 'unknown' : hasScore ? 'finished' : 'scheduled';
 }
 
-function mapStats(rows: SportsDbEventStat[]) {
+function isBlankStat(v: string | undefined): boolean {
+  return !v || v === '—' || v === '-' || v === 'null';
+}
+
+function upsertStat(
+  byKey: Map<string, { name: string; home: string; away: string; key: string }>,
+  key: string,
+  home: string,
+  away: string,
+  onlyIfBlank = false
+) {
+  const existing = byKey.get(key);
+  if (existing) {
+    if (onlyIfBlank) {
+      byKey.set(key, {
+        ...existing,
+        home: isBlankStat(existing.home) ? home : existing.home,
+        away: isBlankStat(existing.away) ? away : existing.away,
+      });
+    } else {
+      // Preferir el mayor (API vs cronología)
+      const h = Math.max(Number(existing.home) || 0, Number(home) || 0);
+      const a = Math.max(Number(existing.away) || 0, Number(away) || 0);
+      const useMax = !isBlankStat(existing.home) || !isBlankStat(home);
+      byKey.set(key, {
+        ...existing,
+        home: useMax && !isBlankStat(home) ? String(h) : isBlankStat(existing.home) ? home : existing.home,
+        away: useMax && !isBlankStat(away) ? String(a) : isBlankStat(existing.away) ? away : existing.away,
+      });
+    }
+    return;
+  }
+  byKey.set(key, {
+    key,
+    name: translateStatName(key),
+    home,
+    away,
+  });
+}
+
+function mapStats(
+  rows: SportsDbEventStat[],
+  timeline: SportsDbTimelineItem[],
+  homeTeamName?: string | null,
+  awayTeamName?: string | null
+) {
   const byKey = new Map<string, { name: string; home: string; away: string; key: string }>();
 
   for (const r of rows) {
@@ -181,7 +302,27 @@ function mapStats(rows: SportsDbEventStat[]) {
     });
   }
 
-  // Garantizar métricas clave aunque la API no las mande
+  // Rellenar desde cronología: tarjetas y tiros a puerta (mínimo por goles)
+  const derived = deriveStatsFromTimeline(timeline, homeTeamName, awayTeamName);
+  upsertStat(
+    byKey,
+    'yellow cards',
+    String(derived.yellowHome),
+    String(derived.yellowAway),
+    false
+  );
+  upsertStat(byKey, 'red cards', String(derived.redHome), String(derived.redAway), false);
+  if (derived.shotsOnGoalHome + derived.shotsOnGoalAway > 0) {
+    upsertStat(
+      byKey,
+      'shots on goal',
+      String(derived.shotsOnGoalHome),
+      String(derived.shotsOnGoalAway),
+      true
+    );
+  }
+
+  // Garantizar filas clave; posesión/córners pueden quedar — si la API no los manda
   const existingKeys = Array.from(byKey.keys());
   for (const p of PRIORITY_STAT_KEYS) {
     if (!existingKeys.some((k) => k === p || k.includes(p))) {
@@ -194,7 +335,36 @@ function mapStats(rows: SportsDbEventStat[]) {
     }
   }
 
-  const all = Array.from(byKey.values());
+  // Unificar duplicados (yellow card / yellow cards)
+  const yellowKeys = Array.from(byKey.keys()).filter((k) => k.includes('yellow'));
+  if (yellowKeys.length > 1) {
+    const primary = byKey.get('yellow cards') ?? byKey.get(yellowKeys[0])!;
+    for (const k of yellowKeys) {
+      if (k === 'yellow cards') continue;
+      const other = byKey.get(k);
+      if (!other) continue;
+      upsertStat(byKey, 'yellow cards', other.home, other.away, false);
+      byKey.delete(k);
+    }
+    byKey.set('yellow cards', {
+      ...(byKey.get('yellow cards') ?? primary),
+      key: 'yellow cards',
+      name: translateStatName('yellow cards'),
+    });
+  }
+
+  const all = Array.from(byKey.values()).filter((s) => {
+    // Ocultar posesión/córners vacíos (no se pueden inferir de la cronología)
+    if (
+      (s.key.includes('possession') || s.key.includes('corner')) &&
+      isBlankStat(s.home) &&
+      isBlankStat(s.away)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   all.sort((a, b) => {
     const pa = isPriorityStat(a.key) ? 0 : 1;
     const pb = isPriorityStat(b.key) ? 0 : 1;
@@ -238,7 +408,6 @@ async function resolveEventId(input: {
   if (input.eventId) {
     const ev = await lookupEvent(input.eventId, { bypassCache: true });
     if (ev) return { event: ev, notes };
-    notes.push('idEvent guardado no resolvió; se intenta por equipos/fecha.');
   }
 
   const date = input.matchDateYmd ?? localDateISO();
@@ -350,11 +519,21 @@ export async function fetchMatchStatus(input: {
     if (hasGoalEvents && phase === 'scheduled') phase = 'live';
     if (hasGoalEvents && !status && phase !== 'finished') phase = 'live';
 
-    if (includeDetails && (phase === 'live' || phase === 'finished' || hasGoalEvents)) {
+    if (includeDetails && (phase === 'live' || phase === 'finished' || hasGoalEvents || rawTl.length)) {
       const rawStats = await lookupEventStats(event.idEvent, { bypassCache: bypass });
-      stats = mapStats(rawStats);
-      if (!rawStats.length) {
-        notes.push('Sin estadísticas detalladas aún (o no disponibles en free).');
+      stats = mapStats(
+        rawStats,
+        rawTl,
+        event.strHomeTeam ?? input.homeTeam,
+        event.strAwayTeam ?? input.awayTeam
+      );
+      const cardsFilled = stats.some(
+        (s) => s.key.includes('yellow') && !isBlankStat(s.home) && !isBlankStat(s.away)
+      );
+      if (cardsFilled) {
+        notes.push('Tarjetas sincronizadas con la cronología.');
+      } else if (!rawStats.length) {
+        notes.push('Pocas estadísticas de la API; se usan eventos de la cronología.');
       }
     } else if (phase === 'scheduled') {
       notes.push('Partido aún no iniciado: no hay stats en vivo.');
