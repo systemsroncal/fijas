@@ -14,11 +14,34 @@ import {
   peruDateISO,
   resolveKickoffPeru,
 } from '@/lib/timezone';
+import {
+  eventsOnDay,
+  findEventInDayList,
+  searchEvent,
+  type SportsDbEvent,
+} from '@/lib/sportsdb/client';
+import {
+  isSportsDbFinished,
+  resolveEventKickoffPeru,
+  shouldPreferSportsDbKickoff,
+} from '@/lib/sportsdb/kickoff';
+
+async function loadSportsDbDayEvents(ymd: string): Promise<SportsDbEvent[]> {
+  const [soccer, anySport] = await Promise.all([
+    eventsOnDay(ymd, 'Soccer'),
+    eventsOnDay(ymd),
+  ]);
+  const byId = new Map<string, SportsDbEvent>();
+  for (const ev of [...soccer, ...anySport]) {
+    const id = ev.idEvent ?? `${ev.strEvent}-${ev.strTime}`;
+    byId.set(id, ev);
+  }
+  return Array.from(byId.values());
+}
 
 /**
  * Lista partidos con predicciones.
- * Horas convertidas a America/Lima (fuente scrape ≈ Europe/London).
- * Filtros: date, league, source, sport, limit, hideFinished.
+ * Horas en America/Lima: tipster (UK) + corrección TheSportsDB cuando hay evento.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth();
@@ -34,7 +57,6 @@ export async function GET(request: Request) {
   const limitRaw = Number(searchParams.get('limit') ?? 800);
   const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 800, 50), 1500);
 
-  // Ventana ±1 día: un kickoff UK puede caer en otro día calendario en Perú
   const fromYmd = addDaysYmd(date, -1);
   const toYmd = addDaysYmd(date, 1);
   const dayStart = new Date(`${fromYmd}T00:00:00.000Z`);
@@ -59,8 +81,26 @@ export async function GET(request: Request) {
     take: Math.min(limit * 2, 2000),
   });
 
+  // Calendario TheSportsDB del día (pocas requests, caché 6h)
+  const dayEvents = (
+    await Promise.all([
+      loadSportsDbDayEvents(fromYmd),
+      loadSportsDbDayEvents(date),
+      loadSportsDbDayEvents(toYmd),
+    ])
+  ).flat();
+  const eventsById = new Map<string, SportsDbEvent>();
+  for (const ev of dayEvents) {
+    if (ev.idEvent) eventsById.set(ev.idEvent, ev);
+  }
+  const uniqueDayEvents = Array.from(eventsById.values());
+
   const now = new Date();
-  const repaired = matches.map((m) => {
+  let sportsDbLookups = 0;
+  const MAX_SEARCH_EVENTS = 12;
+
+  const repaired = [];
+  for (const m of matches) {
     const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
     const fixed = repairMisparsedMatch({
       homeTeam: m.homeTeam,
@@ -68,47 +108,90 @@ export async function GET(request: Request) {
       kickoff: m.kickoff,
       league: m.league,
     });
+    const homeTeam = formatFemeninoLabel(fixed.homeTeam);
+    const awayTeam = formatFemeninoLabel(fixed.awayTeam);
+    const leagueLabel = formatFemeninoLabel(m.league);
     const storedYmd = peruDateISO(new Date(m.matchDate));
-    // matchDate en DB a menudo es medianoche UTC del día scrapeado
     const baseYmd = m.matchDate
       ? `${m.matchDate.getUTCFullYear()}-${String(m.matchDate.getUTCMonth() + 1).padStart(2, '0')}-${String(m.matchDate.getUTCDate()).padStart(2, '0')}`
       : storedYmd;
-    const resolved = resolveKickoffPeru({
+    const tipsterKickoff = fixed.kickoff ?? m.kickoff;
+    const tipsterResolved = resolveKickoffPeru({
       matchDateYmd: baseYmd,
-      kickoff: fixed.kickoff ?? m.kickoff,
+      kickoff: tipsterKickoff,
     });
 
-    return {
+    let event = findEventInDayList(uniqueDayEvents, homeTeam, awayTeam);
+    if (
+      !event &&
+      sportsDbLookups < MAX_SEARCH_EVENTS &&
+      shouldPreferSportsDbKickoff(leagueLabel)
+    ) {
+      sportsDbLookups += 1;
+      event = await searchEvent(homeTeam, awayTeam);
+      if (event?.idEvent) eventsById.set(event.idEvent, event);
+    }
+
+    let kickoff = tipsterResolved.kickoffPeru ?? tipsterKickoff;
+    let matchDatePeru = tipsterResolved.matchDatePeru;
+    let kickoffAt = tipsterResolved.kickoffAt;
+    let kickoffSource = tipsterKickoff;
+    let timeSource: 'tipster' | 'thesportsdb' = 'tipster';
+    let sportsDbStatus: string | null = null;
+    let sportsDbFinished = false;
+
+    if (event) {
+      sportsDbStatus = event.strStatus ?? null;
+      sportsDbFinished = isSportsDbFinished(event);
+      const dbResolved = resolveEventKickoffPeru(event);
+      if (dbResolved.kickoffAt || dbResolved.kickoffPeru) {
+        // Preferir SportsDB: tipsters fallan en Mundiales (sede USA ≠ hora UK)
+        kickoff = dbResolved.kickoffPeru ?? kickoff;
+        matchDatePeru = dbResolved.matchDatePeru ?? matchDatePeru;
+        kickoffAt = dbResolved.kickoffAt ?? kickoffAt;
+        kickoffSource = dbResolved.kickoffPeru ?? kickoffSource;
+        timeSource = 'thesportsdb';
+      }
+    }
+
+    repaired.push({
       ...m,
-      homeTeam: formatFemeninoLabel(fixed.homeTeam),
-      awayTeam: formatFemeninoLabel(fixed.awayTeam),
-      league: formatFemeninoLabel(m.league),
-      kickoff: resolved.kickoffPeru ?? fixed.kickoff ?? m.kickoff,
-      kickoffSource: fixed.kickoff ?? m.kickoff,
+      homeTeam,
+      awayTeam,
+      league: leagueLabel,
+      kickoff,
       kickoffTz: 'America/Lima',
-      matchDatePeru: resolved.matchDatePeru,
+      matchDatePeru,
       sport: detectSport(m.league, note),
+      timeSource,
+      sportsDbStatus,
       _baseYmd: baseYmd,
-    };
-  });
+      _kickoffSource: tipsterKickoff,
+      _kickoffAt: kickoffAt,
+      _sportsDbFinished: sportsDbFinished,
+    });
+  }
 
   const seen = new Set<string>();
   const filtered = repaired.filter((m) => {
     if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
-    // Solo partidos cuyo día (en Perú) coincide con el filtro
     if (m.matchDatePeru !== date) return false;
 
-    if (
-      hideFinished &&
-      date === todayPeru &&
-      !isMatchStillOpenPeru({
-        matchDateYmd: m._baseYmd,
-        kickoff: m.kickoffSource,
-        now,
-        isLive: m.isLive,
-      })
-    ) {
-      return false;
+    if (hideFinished && date === todayPeru) {
+      if (m._sportsDbFinished) return false;
+      if (m._kickoffAt) {
+        const end = m._kickoffAt.getTime() + 2.25 * 60 * 60 * 1000;
+        if (!m.isLive && now.getTime() >= end) return false;
+      } else if (
+        !isMatchStillOpenPeru({
+          matchDateYmd: m._baseYmd,
+          kickoff: m._kickoffSource,
+          now,
+          isLive: m.isLive,
+        })
+      ) {
+        return false;
+      }
     }
     if (sportFilter && m.sport !== sportFilter) return false;
     const key = `${m.homeTeam}|${m.awayTeam}|${m.league}`.toLowerCase();
@@ -117,13 +200,20 @@ export async function GET(request: Request) {
     return true;
   });
 
-  // Ordenar por hora Perú
   filtered.sort((a, b) => (a.kickoff ?? '99').localeCompare(b.kickoff ?? '99'));
 
   const sports = Array.from(new Set(filtered.map((m) => m.sport))).sort();
 
   return NextResponse.json({
-    matches: filtered.map(({ _baseYmd, kickoffSource, ...rest }) => rest),
+    matches: filtered.map(
+      ({
+        _baseYmd,
+        _kickoffSource,
+        _kickoffAt,
+        _sportsDbFinished,
+        ...rest
+      }) => rest
+    ),
     total: filtered.length,
     sports,
     timezone: 'America/Lima',

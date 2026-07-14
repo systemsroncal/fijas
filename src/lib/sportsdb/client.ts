@@ -93,6 +93,7 @@ export type SportsDbEvent = {
   intHomeScore?: string | null;
   intAwayScore?: string | null;
   dateEvent?: string;
+  dateEventLocal?: string | null;
   strLeague?: string;
   strSport?: string;
   idHomeTeam?: string;
@@ -100,7 +101,12 @@ export type SportsDbEvent = {
   strStatus?: string | null;
   strProgress?: string | null;
   strVenue?: string | null;
+  /** Hora UTC (free V1), p.ej. 19:00:00 */
   strTime?: string | null;
+  /** Hora local del venue, p.ej. 14:00:00 */
+  strTimeLocal?: string | null;
+  /** Instantáneo UTC sin Z, p.ej. 2026-07-14T19:00:00 */
+  strTimestamp?: string | null;
   strHomeTeamBadge?: string | null;
   strAwayTeamBadge?: string | null;
 };
