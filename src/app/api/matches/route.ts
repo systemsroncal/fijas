@@ -10,21 +10,18 @@ import {
 } from '@/lib/match-display';
 import {
   addDaysYmd,
+  hasKickoffTime,
   isMatchStillOpenPeru,
   peruDateISO,
   resolveKickoffPeru,
 } from '@/lib/timezone';
-import {
-  eventsOnDay,
-  findEventInDayList,
-  searchEvent,
-  type SportsDbEvent,
-} from '@/lib/sportsdb/client';
+import { eventsOnDay, findEventInDayList, type SportsDbEvent } from '@/lib/sportsdb/client';
 import {
   isSportsDbFinished,
   resolveEventKickoffPeru,
   shouldPreferSportsDbKickoff,
 } from '@/lib/sportsdb/kickoff';
+import { resolveEventId } from '@/lib/sportsdb/match-status';
 
 async function loadSportsDbDayEvents(ymd: string): Promise<SportsDbEvent[]> {
   const [soccer, anySport] = await Promise.all([
@@ -41,7 +38,7 @@ async function loadSportsDbDayEvents(ymd: string): Promise<SportsDbEvent[]> {
 
 /**
  * Lista partidos con predicciones.
- * Horas en America/Lima: tipster (UK) + corrección TheSportsDB cuando hay evento.
+ * Sin hora tipster → misma API TheSportsDB que el análisis de resultados en vivo.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth();
@@ -81,7 +78,6 @@ export async function GET(request: Request) {
     take: Math.min(limit * 2, 2000),
   });
 
-  // Calendario TheSportsDB del día (pocas requests, caché 6h)
   const dayEvents = (
     await Promise.all([
       loadSportsDbDayEvents(fromYmd),
@@ -97,7 +93,9 @@ export async function GET(request: Request) {
 
   const now = new Date();
   let sportsDbLookups = 0;
-  const MAX_SEARCH_EVENTS = 12;
+  /** Prioridad: sin hora tipster; luego Mundiales / FIFA */
+  const MAX_RESOLVE_LOOKUPS = 24;
+  const persistKickoffs: Array<{ id: string; kickoff: string }> = [];
 
   const repaired = [];
   for (const m of matches) {
@@ -111,31 +109,37 @@ export async function GET(request: Request) {
     const homeTeam = formatFemeninoLabel(fixed.homeTeam);
     const awayTeam = formatFemeninoLabel(fixed.awayTeam);
     const leagueLabel = formatFemeninoLabel(m.league);
+    const sport = detectSport(m.league, note);
     const storedYmd = peruDateISO(new Date(m.matchDate));
     const baseYmd = m.matchDate
       ? `${m.matchDate.getUTCFullYear()}-${String(m.matchDate.getUTCMonth() + 1).padStart(2, '0')}-${String(m.matchDate.getUTCDate()).padStart(2, '0')}`
       : storedYmd;
     const tipsterKickoff = fixed.kickoff ?? m.kickoff;
+    const tipsterHasTime = hasKickoffTime(tipsterKickoff);
     const tipsterResolved = resolveKickoffPeru({
       matchDateYmd: baseYmd,
       kickoff: tipsterKickoff,
     });
 
     let event = findEventInDayList(uniqueDayEvents, homeTeam, awayTeam);
-    if (
-      !event &&
-      sportsDbLookups < MAX_SEARCH_EVENTS &&
-      shouldPreferSportsDbKickoff(leagueLabel)
-    ) {
+    const needsApiTime = !tipsterHasTime || shouldPreferSportsDbKickoff(leagueLabel);
+
+    // Misma resolución que /api/match-status (análisis de resultados)
+    if (!event && needsApiTime && sportsDbLookups < MAX_RESOLVE_LOOKUPS) {
       sportsDbLookups += 1;
-      event = await searchEvent(homeTeam, awayTeam);
+      const resolved = await resolveEventId({
+        homeTeam,
+        awayTeam,
+        matchDateYmd: baseYmd,
+        sportKind: sport,
+      });
+      event = resolved.event;
       if (event?.idEvent) eventsById.set(event.idEvent, event);
     }
 
-    let kickoff = tipsterResolved.kickoffPeru ?? tipsterKickoff;
+    let kickoff = tipsterResolved.kickoffPeru ?? (tipsterHasTime ? tipsterKickoff : null);
     let matchDatePeru = tipsterResolved.matchDatePeru;
     let kickoffAt = tipsterResolved.kickoffAt;
-    let kickoffSource = tipsterKickoff;
     let timeSource: 'tipster' | 'thesportsdb' = 'tipster';
     let sportsDbStatus: string | null = null;
     let sportsDbFinished = false;
@@ -144,13 +148,18 @@ export async function GET(request: Request) {
       sportsDbStatus = event.strStatus ?? null;
       sportsDbFinished = isSportsDbFinished(event);
       const dbResolved = resolveEventKickoffPeru(event);
-      if (dbResolved.kickoffAt || dbResolved.kickoffPeru) {
-        // Preferir SportsDB: tipsters fallan en Mundiales (sede USA ≠ hora UK)
+      const useDbTime =
+        Boolean(dbResolved.kickoffPeru || dbResolved.kickoffAt) &&
+        (!tipsterHasTime || shouldPreferSportsDbKickoff(leagueLabel));
+
+      if (useDbTime) {
         kickoff = dbResolved.kickoffPeru ?? kickoff;
         matchDatePeru = dbResolved.matchDatePeru ?? matchDatePeru;
         kickoffAt = dbResolved.kickoffAt ?? kickoffAt;
-        kickoffSource = dbResolved.kickoffPeru ?? kickoffSource;
         timeSource = 'thesportsdb';
+        if (kickoff && !hasKickoffTime(m.kickoff)) {
+          persistKickoffs.push({ id: m.id, kickoff });
+        }
       }
     }
 
@@ -162,7 +171,7 @@ export async function GET(request: Request) {
       kickoff,
       kickoffTz: 'America/Lima',
       matchDatePeru,
-      sport: detectSport(m.league, note),
+      sport,
       timeSource,
       sportsDbStatus,
       _baseYmd: baseYmd,
@@ -170,6 +179,17 @@ export async function GET(request: Request) {
       _kickoffAt: kickoffAt,
       _sportsDbFinished: sportsDbFinished,
     });
+  }
+
+  if (persistKickoffs.length) {
+    await Promise.all(
+      persistKickoffs.map((row) =>
+        prisma.match.update({
+          where: { id: row.id },
+          data: { kickoff: row.kickoff },
+        })
+      )
+    );
   }
 
   const seen = new Set<string>();

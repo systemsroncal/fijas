@@ -24,6 +24,7 @@ import {
   translateTimelineType,
 } from '@/lib/sportsdb/labels-es';
 import { localDateISO } from '@/lib/local-date';
+import { resolveEventKickoffPeru } from '@/lib/sportsdb/kickoff';
 
 export type MatchPhase = 'scheduled' | 'live' | 'finished' | 'unknown';
 
@@ -34,6 +35,10 @@ export type MatchStatusPayload = {
   label: string | null;
   league: string | null;
   date: string | null;
+  /** Hora de saque en America/Lima (desde TheSportsDB) */
+  kickoffPeru: string | null;
+  /** ISO UTC del saque, si se pudo resolver */
+  kickoffAt: string | null;
   status: string | null;
   statusLabel: string | null;
   progress: string | null;
@@ -477,7 +482,8 @@ function mapTimeline(rows: SportsDbTimelineItem[]) {
   }));
 }
 
-async function resolveEventId(input: {
+/** Misma resolución de evento que usa el panel de stats en vivo / FT. */
+export async function resolveEventId(input: {
   eventId?: string | null;
   homeTeam?: string;
   awayTeam?: string;
@@ -626,6 +632,11 @@ export async function fetchMatchStatus(input: {
       notes.push('Sin cronología de eventos aún.');
     }
 
+    const ko = resolveEventKickoffPeru(event);
+    if (ko.kickoffPeru) {
+      notes.push(`Hora de saque (TheSportsDB): ${ko.kickoffPeru} hora Perú.`);
+    }
+
     return {
       source: 'thesportsdb',
       phase,
@@ -633,6 +644,8 @@ export async function fetchMatchStatus(input: {
       label: event.strEvent ?? null,
       league: event.strLeague ?? null,
       date: event.dateEvent ?? input.matchDateYmd ?? null,
+      kickoffPeru: ko.kickoffPeru,
+      kickoffAt: ko.kickoffAt?.toISOString() ?? null,
       status,
       statusLabel: translateMatchStatus(status),
       progress: event.strProgress ?? null,
@@ -658,6 +671,8 @@ export async function fetchMatchStatus(input: {
     label: null,
     league: null,
     date: input.matchDateYmd ?? null,
+    kickoffPeru: null,
+    kickoffAt: null,
     status,
     statusLabel: translateMatchStatus(status),
     progress: null,

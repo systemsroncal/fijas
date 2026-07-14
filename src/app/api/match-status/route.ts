@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/api-guard';
 import { fetchMatchStatus } from '@/lib/sportsdb/match-status';
 import { localDateISO } from '@/lib/local-date';
 import { repairMisparsedMatch } from '@/lib/match-display';
+import { hasKickoffTime } from '@/lib/timezone';
 
 const querySchema = z.object({
   matchId: z.string().optional(),
@@ -37,6 +38,8 @@ export async function GET(request: NextRequest) {
     let sportKind = q.sport;
     let scrapeIsLive = false;
     let eventId = q.eventId;
+    let matchId: string | null = q.matchId ?? null;
+    let storedKickoff: string | null = null;
 
     if (q.matchId) {
       const match = await prisma.match.findUnique({
@@ -53,6 +56,7 @@ export async function GET(request: NextRequest) {
       });
       homeTeam = fixed.homeTeam;
       awayTeam = fixed.awayTeam;
+      storedKickoff = fixed.kickoff ?? match.kickoff;
       matchDateYmd =
         matchDateYmd ??
         (match.matchDate ? localDateISO(new Date(match.matchDate)) : localDateISO());
@@ -75,6 +79,18 @@ export async function GET(request: NextRequest) {
       scrapeIsLive,
       includeDetails: q.details !== false,
     });
+
+    // Si el scrape no trajo hora, persistir la de TheSportsDB (misma fuente que stats en vivo)
+    if (
+      matchId &&
+      status.kickoffPeru &&
+      !hasKickoffTime(storedKickoff)
+    ) {
+      await prisma.match.update({
+        where: { id: matchId },
+        data: { kickoff: status.kickoffPeru },
+      });
+    }
 
     return NextResponse.json({ status });
   } catch (err) {

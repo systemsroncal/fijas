@@ -12,6 +12,11 @@ function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
+/** True si hay una hora HH:mm usable. */
+export function hasKickoffTime(kickoff?: string | null): boolean {
+  return Boolean(kickoff?.trim() && /^\d{1,2}:\d{2}/.test(kickoff.trim()));
+}
+
 /** Fecha YYYY-MM-DD en una zona IANA. */
 export function dateISOInTz(d: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {

@@ -146,6 +146,13 @@ export default function MatchResultStatsPanel({
           <Chip size="small" variant="outlined" label={status.statusLabel || status.status} />
         )}
         {status.progress && <Chip size="small" variant="outlined" label={status.progress} />}
+        {status.kickoffPeru && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Saque ${status.kickoffPeru} (PE)`}
+          />
+        )}
         {status.scoreFromTimeline && (
           <Chip size="small" color="info" variant="outlined" label="Marcador desde goles" />
         )}
