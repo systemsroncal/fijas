@@ -72,7 +72,7 @@ export default function DashboardPage() {
   const dayLabel =
     date === todayPeru ? 'hoy' : date === tomorrowPeru ? 'mañana' : date;
 
-  const load = useCallback(
+  const fetchMatches = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent) setLoading(true);
       const params = new URLSearchParams({ date, limit: '1000' });
@@ -80,23 +80,44 @@ export default function DashboardPage() {
       if (sport) params.set('sport', sport);
       if (source) params.set('source', source);
       const res = await fetch(apiUrl(`/api/matches?${params}`));
+      let missingKickoff = 0;
       if (res.ok) {
         const data = await res.json();
         const rows = (data.matches ?? []) as MatchRow[];
         setMatches(rows.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam)));
+        missingKickoff = Number(data.missingKickoff ?? 0);
       }
       if (!opts?.silent) setLoading(false);
+      return missingKickoff;
     },
     [date, league, sport, source]
   );
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      const missing = await fetchMatches();
+      if (cancelled || missing <= 0) return;
+      // Horas faltantes en background; no bloquea la tabla
+      const enrichRes = await fetch(apiUrl('/api/matches/enrich-kickoffs'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      });
+      if (cancelled || !enrichRes.ok) return;
+      const enrichData = await enrichRes.json().catch(() => null);
+      if (!cancelled && enrichData?.updated > 0) {
+        await fetchMatches({ silent: true });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchMatches, date]);
 
   const silentReload = useCallback(() => {
-    load({ silent: true });
-  }, [load]);
+    void fetchMatches({ silent: true });
+  }, [fetchMatches]);
 
   return (
     <PageContainer title={`Partidos de ${dayLabel}`} description="Resumen de partidos scrapeados">

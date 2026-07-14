@@ -118,6 +118,7 @@ export function formatHmInTz(date: Date, timeZone: string): string {
 
 /**
  * Kickoff scrapeado (hora fuente) → display Perú + instante para filtrar.
+ * También acepta ISO UTC guardado por TheSportsDB (…T19:00:00Z).
  */
 export function resolveKickoffPeru(input: {
   matchDateYmd: string;
@@ -129,14 +130,29 @@ export function resolveKickoffPeru(input: {
   matchDatePeru: string;
 } {
   const sourceTz = input.sourceTz ?? SOURCE_KICKOFF_TZ;
-  const hm = input.kickoff?.trim() || null;
-  if (!hm) {
+  const raw = input.kickoff?.trim() || null;
+  if (!raw) {
     return {
       kickoffPeru: null,
       kickoffAt: null,
       matchDatePeru: input.matchDateYmd,
     };
   }
+
+  // Persistido desde SportsDB / match-status: instante absoluto
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+    const iso = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+    const at = new Date(iso);
+    if (!Number.isNaN(at.getTime())) {
+      return {
+        kickoffPeru: formatHmInTz(at, APP_TZ),
+        kickoffAt: at,
+        matchDatePeru: dateISOInTz(at, APP_TZ),
+      };
+    }
+  }
+
+  const hm = raw;
   const at = zonedDateTimeToUtc(input.matchDateYmd, hm, sourceTz);
   if (!at) {
     return {

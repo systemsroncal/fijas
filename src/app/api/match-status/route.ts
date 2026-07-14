@@ -80,16 +80,16 @@ export async function GET(request: NextRequest) {
       includeDetails: q.details !== false,
     });
 
-    // Si el scrape no trajo hora, persistir la de TheSportsDB (misma fuente que stats en vivo)
-    if (
-      matchId &&
-      status.kickoffPeru &&
-      !hasKickoffTime(storedKickoff)
-    ) {
-      await prisma.match.update({
-        where: { id: matchId },
-        data: { kickoff: status.kickoffPeru },
-      });
+    // Si el scrape no trajo hora, persistir ISO UTC (evita doble conversión UK→PE)
+    if (matchId && status.kickoffAt && !/^\d{4}-\d{2}-\d{2}T/.test(storedKickoff?.trim() || '')) {
+      const shouldSave =
+        !hasKickoffTime(storedKickoff) || Boolean(status.kickoffPeru);
+      if (shouldSave && !hasKickoffTime(storedKickoff)) {
+        await prisma.match.update({
+          where: { id: matchId },
+          data: { kickoff: status.kickoffAt },
+        });
+      }
     }
 
     return NextResponse.json({ status });
