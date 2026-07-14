@@ -70,7 +70,7 @@ export type AnalysisBrief = {
 };
 
 export type StructuredMatchPayload = {
-  mode: 'MATCH' | 'RANDOM';
+  mode: 'MATCH' | 'RANDOM' | 'ACCUMULATOR';
   match?: {
     id?: string;
     homeTeam: string;
@@ -80,6 +80,18 @@ export type StructuredMatchPayload = {
     sport?: string;
     homeCrestUrl?: string | null;
     awayCrestUrl?: string | null;
+  };
+  /** Meta de combinada (cuando mode = ACCUMULATOR) */
+  accumulatorMeta?: {
+    name: string;
+    totalOdds: number;
+    resolvedLegs: Array<{
+      matchId?: string;
+      matchLabel: string;
+      market: string;
+      odds: number;
+      aiProb: number;
+    }>;
   };
   probs: { home: number; draw: number; away: number };
   scoreline: { mostLikely: string; alternatives: string[]; source: 'model' };

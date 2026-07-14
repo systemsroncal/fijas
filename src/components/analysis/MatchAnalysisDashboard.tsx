@@ -179,6 +179,24 @@ export default function MatchAnalysisDashboard({
                   Scanner de huecos
                 </Typography>
               )}
+              {payload.mode === 'ACCUMULATOR' && payload.accumulatorMeta && (
+                <Box mt={1.5}>
+                  <Typography variant="subtitle2" fontWeight={700}>
+                    Combinada · {payload.accumulatorMeta.name} (@
+                    {payload.accumulatorMeta.totalOdds})
+                  </Typography>
+                  <Stack spacing={0.5} mt={1}>
+                    {payload.accumulatorMeta.resolvedLegs.map((leg, i) => (
+                      <Typography key={i} variant="body2">
+                        <strong>{leg.matchLabel}</strong> → {leg.market} @{leg.odds.toFixed(2)}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+              {payload.mode === 'RANDOM' && (
+                <Chip size="small" label="Partido elegido al azar" sx={{ mt: 1.5 }} color="info" />
+              )}
               {m?.tip && (
                 <Chip size="small" label={`Tip scrapeado: ${m.tip}`} sx={{ mt: 1.5 }} color="primary" />
               )}

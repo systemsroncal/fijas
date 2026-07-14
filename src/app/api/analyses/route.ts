@@ -4,8 +4,8 @@ import { AiProvider, AnalysisMode, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-guard';
 import { decryptSecret } from '@/lib/encryption';
-import { analyzeAccumulatorWithFallback } from '@/lib/ai/providers';
 import {
+  buildAccumulatorStructuredPayload,
   buildModelPayload,
   buildRandomScannerPayload,
   emptyForm,
@@ -15,7 +15,6 @@ import {
 import { MatchContext } from '@/lib/ai/football-model';
 import {
   extractScoreFromText,
-  formatReadablePick,
   isJunkMatch,
   repairMisparsedMatch,
 } from '@/lib/match-display';
@@ -271,10 +270,23 @@ export async function POST(request: Request) {
       dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
       const now = new Date();
 
+      const prevAnalyses = await prisma.analysis.findMany({
+        where: {
+          userId: auth.user.id,
+          matchId: { not: null },
+          mode: { in: [AnalysisMode.MATCH, AnalysisMode.RANDOM] },
+        },
+        select: { matchId: true },
+        take: 300,
+      });
+      const excludeMatchIds = new Set(
+        prevAnalyses.map((a) => a.matchId).filter((id): id is string => Boolean(id))
+      );
+
       const matches = await prisma.match.findMany({
         where: { matchDate: { gte: dayStart, lt: dayEnd } },
         include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 } },
-        take: 80,
+        take: 200,
       });
       const valid = matches
         .map((m) => {
@@ -305,7 +317,7 @@ export async function POST(request: Request) {
         );
       }
 
-      let payload = buildRandomScannerPayload(valid.map(toCtx));
+      let payload = buildRandomScannerPayload(valid.map(toCtx), { excludeMatchIds });
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'random-scanner-poisson';
@@ -319,10 +331,13 @@ export async function POST(request: Request) {
       }
 
       const scores = scoresFromPayload(payload);
+      const primaryMatchId =
+        payload.match?.id && payload.match.id !== 'N/A' ? payload.match.id : null;
+
       const analysis = await prisma.analysis.create({
         data: {
           mode: AnalysisMode.RANDOM,
-          matchId: payload.match?.id && payload.match.id !== 'N/A' ? payload.match.id : null,
+          matchId: primaryMatchId,
           userId: auth.user.id,
           iaProvider: providerUsed,
           promptUsed,
@@ -416,98 +431,108 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Accumulator not found' }, { status: 404 });
     }
 
-    if (Object.keys(keysByProvider).length === 0) {
+    if (accumulator.isAnalyzed) {
       return NextResponse.json(
-        { error: 'Configure al menos una API key en Settings' },
+        {
+          error:
+            'Esta combinada ya fue analizada. Elige otra o crea una nueva en el Creador de combinadas.',
+        },
         { status: 400 }
       );
     }
 
-    const legsForUi = accumulator.matches.map((m) => {
+    // Recargar predicciones por partido para cuotas/tips
+    const matchIds = accumulator.matches.map((m) => m.matchId);
+    const withPreds = await prisma.match.findMany({
+      where: { id: { in: matchIds } },
+      include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 } },
+    });
+    const predMap = new Map(withPreds.map((m) => [m.id, m]));
+    const contexts = accumulator.matches.map((am) => {
+      const full = predMap.get(am.matchId);
       const fixed = repairMisparsedMatch({
-        homeTeam: m.match.homeTeam,
-        awayTeam: m.match.awayTeam,
-        kickoff: m.match.kickoff,
-        league: m.match.league,
+        homeTeam: am.match.homeTeam,
+        awayTeam: am.match.awayTeam,
+        kickoff: am.match.kickoff,
+        league: am.match.league,
       });
-      const betChoice = formatReadablePick(
-        m.betChoice ?? 'N/A',
-        fixed.homeTeam,
-        fixed.awayTeam
-      );
-      return {
-        matchId: m.matchId,
-        kickoff: fixed.kickoff ?? m.match.kickoff,
+      return toCtx({
+        id: am.match.id,
         homeTeam: fixed.homeTeam,
         awayTeam: fixed.awayTeam,
-        league: m.match.league,
-        betChoice,
-        odds: m.odds != null ? String(m.odds) : '?',
-      };
+        league: am.match.league,
+        kickoff: fixed.kickoff ?? am.match.kickoff,
+        predictions: full?.predictions,
+      });
     });
 
-    const summary = [
-      `Total odds: ${accumulator.totalOdds}`,
-      ...legsForUi.map((leg) => {
-        const time = leg.kickoff ? `${leg.kickoff} ` : '';
-        return `- ${time}${leg.homeTeam} vs ${leg.awayTeam} (${leg.league}) | ${leg.betChoice} @ ${leg.odds}`;
-      }),
-    ].join('\n');
-
-    const result = await analyzeAccumulatorWithFallback(
-      body.provider,
-      keysByProvider,
-      summary
+    const built = buildAccumulatorStructuredPayload(
+      contexts,
+      accumulator.name ?? 'Combinada'
     );
+    let payload: StructuredMatchPayload = built;
+    let raw = JSON.stringify(payload);
+    let providerUsed: AiProvider = body.provider;
+    let promptUsed = 'accumulator-poisson-model';
+
+    if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
+      const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
+      payload = enriched.payload;
+      raw = enriched.raw;
+      providerUsed = enriched.providerUsed;
+      promptUsed = enriched.promptUsed;
+    }
+
+    // Persistir picks elegidos por el modelo en cada pierna
+    for (const leg of built.resolvedLegs) {
+      if (!leg.matchId) continue;
+      const am = accumulator.matches.find((x) => x.matchId === leg.matchId);
+      if (!am) continue;
+      await prisma.accumulatorMatch.update({
+        where: { id: am.id },
+        data: {
+          betChoice: leg.market,
+          odds: new Prisma.Decimal(leg.odds.toFixed(3)),
+        },
+      });
+    }
+
+    const scores = scoresFromPayload(payload);
+    const totalOdds = built.accumulatorMeta?.totalOdds ?? Number(accumulator.totalOdds);
+
+    await prisma.accumulator.update({
+      where: { id: accumulator.id },
+      data: {
+        isAnalyzed: true,
+        totalOdds: new Prisma.Decimal(totalOdds.toFixed(3)),
+      },
+    });
 
     const analysis = await prisma.analysis.create({
       data: {
         mode: AnalysisMode.ACCUMULATOR,
         accumulatorId: accumulator.id,
+        matchId: payload.match?.id && payload.match.id !== 'N/A' ? payload.match.id : null,
         userId: auth.user.id,
-        iaProvider: result.providerUsed,
-        promptUsed: result.promptUsed,
-        response: result.rawResponse,
-        payload: {
-          mode: 'ACCUMULATOR',
-          summary,
-          legs: legsForUi,
-          riskScore: result.riskScore,
-          evScore: result.evScore,
-          recommendedStake: result.recommendedStake,
-          rationale: (() => {
-            try {
-              const raw = result.rawResponse.trim();
-              const start = raw.indexOf('{');
-              const end = raw.lastIndexOf('}');
-              if (start >= 0 && end > start) {
-                const obj = JSON.parse(raw.slice(start, end + 1)) as { rationale?: string };
-                return typeof obj.rationale === 'string' ? obj.rationale : undefined;
-              }
-            } catch {
-              /* ignore */
-            }
-            return undefined;
-          })(),
-        } as Prisma.InputJsonValue,
-        riskScore: new Prisma.Decimal(result.riskScore),
-        evScore: new Prisma.Decimal(result.evScore),
-        recommendedStake: new Prisma.Decimal(result.recommendedStake),
+        iaProvider: providerUsed,
+        promptUsed,
+        response: raw,
+        payload: payload as unknown as Prisma.InputJsonValue,
+        riskScore: new Prisma.Decimal(scores.riskScore),
+        evScore: new Prisma.Decimal(scores.evScore),
+        recommendedStake: new Prisma.Decimal(scores.recommendedStake),
       },
       include: { accumulator: true, match: true },
     });
 
-    await prisma.accumulator.update({
-      where: { id: accumulator.id },
-      data: { isAnalyzed: true },
-    });
+    if (keysByProvider[providerUsed]) {
+      await prisma.apiKey.updateMany({
+        where: { userId: auth.user.id, provider: providerUsed },
+        data: { lastUsed: new Date() },
+      });
+    }
 
-    await prisma.apiKey.updateMany({
-      where: { userId: auth.user.id, provider: result.providerUsed },
-      data: { lastUsed: new Date() },
-    });
-
-    return NextResponse.json({ analysis, result });
+    return NextResponse.json({ analysis, payload });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.flatten() }, { status: 400 });

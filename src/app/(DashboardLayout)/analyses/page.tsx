@@ -2,7 +2,7 @@
 
 import { apiUrl } from '@/lib/paths';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -21,9 +21,6 @@ import {
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import { AI_PROVIDERS } from '@/lib/ai/providers-client';
 import MatchAnalysisDashboard from '@/components/analysis/MatchAnalysisDashboard';
-import AccumulatorAnalysisCard, {
-  type AccumulatorResultView,
-} from '@/components/analysis/AccumulatorAnalysisCard';
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { isJunkMatch } from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
@@ -63,8 +60,6 @@ type Analysis = {
   match?: MatchOpt | null;
 };
 
-type AccumulatorResult = AccumulatorResultView;
-
 type Mode = 'MATCH' | 'ACCUMULATOR' | 'RANDOM' | 'SUGGESTED';
 
 function isMatchDashboardPayload(value: unknown): value is StructuredMatchPayload {
@@ -76,7 +71,7 @@ function isMatchDashboardPayload(value: unknown): value is StructuredMatchPayloa
     !!probs &&
     typeof probs.home === 'number' &&
     !!p.scoreline &&
-    (p.mode === 'MATCH' || p.mode === 'RANDOM')
+    (p.mode === 'MATCH' || p.mode === 'RANDOM' || p.mode === 'ACCUMULATOR')
   );
 }
 
@@ -97,8 +92,25 @@ export default function AnalysesPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<StructuredMatchPayload | null>(null);
-  const [accResult, setAccResult] = useState<AccumulatorResult | null>(null);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
+
+  const pendingAccumulators = useMemo(
+    () => accumulators.filter((a) => !a.isAnalyzed),
+    [accumulators]
+  );
+
+  const analyzedMatchIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of analyses) {
+      if (a.match?.id) ids.add(a.match.id);
+    }
+    return ids;
+  }, [analyses]);
+
+  const availableMatches = useMemo(
+    () => matches.filter((m) => !analyzedMatchIds.has(m.id)),
+    [matches, analyzedMatchIds]
+  );
 
   const refresh = async () => {
     setLoading(true);
@@ -136,8 +148,6 @@ export default function AnalysesPage() {
   const run = async (override?: { mode?: Mode; matchId?: string }) => {
     setError(null);
     setResultMsg(null);
-    setPayload(null);
-    setAccResult(null);
 
     const activeMode = override?.mode ?? mode;
     const activeMatchId = override?.matchId ?? matchId;
@@ -147,7 +157,7 @@ export default function AnalysesPage() {
       return;
     }
     if (activeMode === 'ACCUMULATOR' && !accumulatorId) {
-      setError('Selecciona una combinada creada');
+      setError('Selecciona una combinada pendiente de analizar');
       return;
     }
     if (activeMode === 'SUGGESTED' && !suggestedId) {
@@ -167,8 +177,8 @@ export default function AnalysesPage() {
         : activeMode === 'RANDOM'
           ? { mode: 'RANDOM', provider, enrich: false }
           : activeMode === 'SUGGESTED'
-            ? { mode: 'ACCUMULATOR', suggestedId, provider }
-            : { mode: 'ACCUMULATOR', accumulatorId, provider };
+            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich: false }
+            : { mode: 'ACCUMULATOR', accumulatorId, provider, enrich: false };
 
     try {
       const res = await fetch(apiUrl('/api/analyses'), {
@@ -185,33 +195,20 @@ export default function AnalysesPage() {
       const candidate = data.payload ?? data.analysis?.payload;
       if (isMatchDashboardPayload(candidate)) {
         setPayload(candidate);
-      } else if (activeMode === 'ACCUMULATOR' || activeMode === 'SUGGESTED') {
-        const a = data.analysis;
-        const p =
-          typeof candidate === 'object' && candidate
-            ? (candidate as {
-                summary?: string;
-                rationale?: string;
-                legs?: AccumulatorResult['legs'];
-              })
-            : null;
-        setAccResult({
-          riskScore: a?.riskScore ?? data.result?.riskScore ?? null,
-          evScore: a?.evScore ?? data.result?.evScore ?? null,
-          recommendedStake: a?.recommendedStake ?? data.result?.recommendedStake ?? null,
-          provider: a?.iaProvider ?? data.result?.providerUsed ?? provider,
-          summary: p?.summary,
-          rationale: p?.rationale,
-          legs: p?.legs,
-          response: a?.response,
-          name: a?.accumulator?.name ?? null,
-        });
+      } else {
+        setError('El análisis no devolvió un dashboard estructurado.');
+        setPayload(null);
       }
 
       const a = data.analysis;
       setResultMsg(
         `Riesgo: ${a?.riskScore ?? data.result?.riskScore} | EV: ${a?.evScore ?? data.result?.evScore} | Stake: ${a?.recommendedStake ?? data.result?.recommendedStake} | ${a?.iaProvider ?? data.result?.providerUsed}`
       );
+
+      // Limpiar selección de combinada ya analizada
+      if (activeMode === 'ACCUMULATOR') setAccumulatorId('');
+      if (activeMode === 'MATCH' && activeMatchId) setMatchId('');
+
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error de red al analizar');
@@ -227,33 +224,21 @@ export default function AnalysesPage() {
   const openHistory = (a: Analysis) => {
     setError(null);
     setResultMsg(null);
-    setPayload(null);
-    setAccResult(null);
     if (isMatchDashboardPayload(a.payload)) {
       setPayload(a.payload);
       return;
     }
-    if (a.mode === 'ACCUMULATOR' || (!a.match && a.accumulator)) {
-      const p = a.payload as {
-        summary?: string;
-        rationale?: string;
-        legs?: AccumulatorResult['legs'];
-      } | null;
-      setAccResult({
-        riskScore: a.riskScore,
-        evScore: a.evScore,
-        recommendedStake: a.recommendedStake,
-        provider: a.iaProvider,
-        summary: p?.summary,
-        rationale: p?.rationale,
-        legs: p?.legs,
-        response: a.response,
-        name: a.accumulator?.name ?? null,
-      });
-      return;
-    }
-    setError('Este análisis no tiene dashboard de partido (payload incompleto o antiguo).');
+    setError('Este análisis antiguo no tiene dashboard. Genera uno nuevo.');
   };
+
+  const analyzeLabel =
+    mode === 'RANDOM'
+      ? 'Analizar aleatorio'
+      : mode === 'ACCUMULATOR'
+        ? 'Analizar combinada'
+        : mode === 'SUGGESTED'
+          ? 'Analizar sugerida'
+          : 'Analizar partido';
 
   return (
     <PageContainer title="Análisis IA" description="Partido, combinada y scanner de huecos">
@@ -278,22 +263,22 @@ export default function AnalysesPage() {
               <ToggleButton value="RANDOM">Aleatorio / huecos</ToggleButton>
             </ToggleButtonGroup>
 
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
               {mode === 'MATCH' && (
                 <TextField
                   select
-                  label="Partido de hoy"
+                  label="Partido pendiente"
                   size="small"
                   fullWidth
                   value={matchId}
                   onChange={(e) => setMatchId(e.target.value)}
                   helperText={
-                    matches.length === 0
-                      ? 'Sin partidos hoy — ejecuta scrapers'
-                      : `${matches.length} partidos`
+                    availableMatches.length === 0
+                      ? 'Sin partidos nuevos (ya analizados o sin scrapers)'
+                      : `${availableMatches.length} sin analizar · ${matches.length} totales`
                   }
                 >
-                  {matches.map((m) => (
+                  {availableMatches.map((m) => (
                     <MenuItem key={m.id} value={m.id}>
                       {m.homeTeam} vs {m.awayTeam} ({m.league})
                     </MenuItem>
@@ -303,13 +288,18 @@ export default function AnalysesPage() {
               {mode === 'ACCUMULATOR' && (
                 <TextField
                   select
-                  label="Combinada del creador"
+                  label="Combinada pendiente"
                   size="small"
                   fullWidth
                   value={accumulatorId}
                   onChange={(e) => setAccumulatorId(e.target.value)}
+                  helperText={
+                    pendingAccumulators.length === 0
+                      ? 'No hay combinadas sin analizar — créalas en el Creador'
+                      : `${pendingAccumulators.length} pendientes`
+                  }
                 >
-                  {accumulators.map((a) => (
+                  {pendingAccumulators.map((a) => (
                     <MenuItem key={a.id} value={a.id}>
                       {a.name ?? a.id} (@{a.totalOdds})
                     </MenuItem>
@@ -334,8 +324,9 @@ export default function AnalysesPage() {
               )}
               {mode === 'RANDOM' && (
                 <Alert severity="info" sx={{ flex: 1 }}>
-                  Escanea partidos de hoy con Poisson + edge. Solo partidos válidos (sin cabeceras
-                  basura).
+                  Elige un partido al azar entre los pendientes (no reutiliza los ya analizados).
+                  También propone combinadas/huecos nuevos. Pulsa el botón para lanzar otro
+                  análisis distinto.
                 </Alert>
               )}
               <TextField
@@ -352,8 +343,14 @@ export default function AnalysesPage() {
                   </MenuItem>
                 ))}
               </TextField>
-              <Button variant="contained" onClick={() => run()} disabled={running}>
-                {running ? <CircularProgress size={22} /> : 'Analizar'}
+              <Button
+                variant="contained"
+                size="large"
+                onClick={() => run()}
+                disabled={running}
+                sx={{ minWidth: 200, whiteSpace: 'nowrap' }}
+              >
+                {running ? <CircularProgress size={22} color="inherit" /> : analyzeLabel}
               </Button>
             </Stack>
           </Stack>
@@ -373,10 +370,15 @@ export default function AnalysesPage() {
       {payload && (
         <Box mb={3}>
           <MatchAnalysisDashboard payload={payload} onAnalyzeMatch={analyzeMatchById} />
+          {mode === 'RANDOM' && (
+            <Stack direction="row" spacing={1} mt={2} flexWrap="wrap">
+              <Button variant="outlined" onClick={() => run({ mode: 'RANDOM' })} disabled={running}>
+                Analizar otro aleatorio
+              </Button>
+            </Stack>
+          )}
         </Box>
       )}
-
-      {accResult && <AccumulatorAnalysisCard result={accResult} />}
 
       {loading ? (
         <Box textAlign="center">
@@ -401,8 +403,8 @@ export default function AnalysesPage() {
                         : a.accumulator?.name ?? 'Análisis'}
                     </Typography>
                     <Chip size="small" label={a.iaProvider} />
-                    <Button size="small" onClick={() => openHistory(a)}>
-                      {canDashboard ? 'Ver dashboard' : 'Ver resultado'}
+                    <Button size="small" onClick={() => openHistory(a)} disabled={!canDashboard}>
+                      Ver dashboard
                     </Button>
                   </Stack>
                   <Typography variant="body2" color="textSecondary">

@@ -27,7 +27,6 @@ import {
   formatReadablePick,
   isJunkMatch,
   normalizeTip,
-  resolveOdds,
   sportLabel,
   SPORT_OPTIONS,
   type SportKind,
@@ -51,20 +50,17 @@ type MatchRow = {
   }>;
 };
 
-type Leg = {
+type SelectedMatch = {
   matchId: string;
   label: string;
-  betChoice: string;
-  odds: number;
-  estimated: boolean;
 };
 
 /**
- * Creador de combinadas: filtros por fecha/deporte + más partidos.
+ * Creador de combinadas: solo elige partidos (el pick lo resuelve el análisis IA).
  */
 export default function AccumulatorBuilderPage() {
   const [matches, setMatches] = useState<MatchRow[]>([]);
-  const [legs, setLegs] = useState<Record<string, Leg>>({});
+  const [selected, setSelected] = useState<Record<string, SelectedMatch>>({});
   const [name, setName] = useState('');
   const [date, setDate] = useState(() => localDateISO());
   const [league, setLeague] = useState('');
@@ -95,40 +91,20 @@ export default function AccumulatorBuilderPage() {
     void load();
   }, [load]);
 
-  const totalOdds = useMemo(
-    () => Object.values(legs).reduce((acc, leg) => acc * leg.odds, 1),
-    [legs]
-  );
+  const selectedCount = useMemo(() => Object.keys(selected).length, [selected]);
 
-  const hasEstimated = Object.values(legs).some((l) => l.estimated);
-
-  const toggleLeg = (match: MatchRow, choice: '1' | 'X' | '2') => {
-    const p = match.predictions[0];
-    const odds = resolveOdds(choice, p, 1.5);
-    const book =
-      choice === '1'
-        ? Number(p?.oddsHome ?? 0) > 1
-        : choice === 'X'
-          ? Number(p?.oddsDraw ?? 0) > 1
-          : Number(p?.oddsAway ?? 0) > 1;
-    const tipMatches = normalizeTip(p?.betChoice) === choice && Number(p?.odds ?? 0) > 1;
-    const estimated = !book && !tipMatches;
-
-    setLegs((prev) => {
-      const key = match.id;
-      if (prev[key]?.betChoice === choice) {
+  const toggleMatch = (match: MatchRow) => {
+    setSelected((prev) => {
+      if (prev[match.id]) {
         const next = { ...prev };
-        delete next[key];
+        delete next[match.id];
         return next;
       }
       return {
         ...prev,
-        [key]: {
+        [match.id]: {
           matchId: match.id,
           label: `${match.homeTeam} vs ${match.awayTeam}`,
-          betChoice: choice,
-          odds,
-          estimated,
         },
       };
     });
@@ -137,8 +113,8 @@ export default function AccumulatorBuilderPage() {
   const save = async () => {
     setMessage(null);
     setError(null);
-    const selected = Object.values(legs);
-    if (selected.length === 0) {
+    const legs = Object.values(selected);
+    if (legs.length === 0) {
       setError('Selecciona al menos un partido');
       return;
     }
@@ -147,11 +123,11 @@ export default function AccumulatorBuilderPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: name || undefined,
-        legs: selected.map((l) => ({
+        legs: legs.map((l) => ({
           matchId: l.matchId,
-          betType: '1X2',
-          betChoice: l.betChoice,
-          odds: l.odds,
+          betType: 'AUTO',
+          betChoice: 'AUTO',
+          odds: 1.5, // placeholder; el análisis IA asigna el pick y cuota real
         })),
       }),
     });
@@ -160,21 +136,36 @@ export default function AccumulatorBuilderPage() {
       setError(data.error ?? 'Error al guardar');
       return;
     }
-    setMessage(`Combinada guardada. Cuota total: ${data.accumulator.totalOdds}`);
-    setLegs({});
+    setMessage(
+      `Combinada guardada con ${legs.length} partidos. Analízala en Análisis IA → Mis combinadas (el modelo elegirá los resultados).`
+    );
+    setSelected({});
   };
 
   return (
     <PageContainer title="Creador de combinadas" description="Arma tu acumulada">
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={2}
+        flexWrap="wrap"
+        gap={1}
+      >
         <Typography variant="h4" fontWeight={700}>
           Creador de combinadas
         </Typography>
-        <Chip
-          label={`${matches.length} partidos`}
-          color={matches.length > 0 ? 'primary' : 'default'}
-          variant="outlined"
-        />
+        <Stack direction="row" spacing={1}>
+          <Chip
+            label={`${matches.length} partidos`}
+            color={matches.length > 0 ? 'primary' : 'default'}
+            variant="outlined"
+          />
+          <Chip
+            label={`${selectedCount} seleccionados`}
+            color={selectedCount > 0 ? 'success' : 'default'}
+          />
+        </Stack>
       </Stack>
 
       <Card sx={{ mb: 2 }}>
@@ -237,19 +228,14 @@ export default function AccumulatorBuilderPage() {
               onChange={(e) => setName(e.target.value)}
               fullWidth
             />
-            <Typography fontWeight={700} whiteSpace="nowrap">
-              Cuota total: {Object.keys(legs).length ? totalOdds.toFixed(3) : '—'}
-            </Typography>
-            <Button variant="contained" onClick={save}>
-              Guardar
+            <Button variant="contained" onClick={save} disabled={selectedCount === 0}>
+              Guardar combinada
             </Button>
           </Stack>
-          {hasEstimated && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              Algunas cuotas son estimadas (1.50) porque la fuente solo trae tip, no odds de casa.
-              En tenis/golf el empate suele no aplicar.
-            </Alert>
-          )}
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Solo seleccionas partidos. No eliges si gana local, empate o visitante: eso lo resuelve
+            el análisis IA al analizar la combinada.
+          </Alert>
           {message && (
             <Alert severity="success" sx={{ mt: 2 }}>
               {message}
@@ -271,19 +257,16 @@ export default function AccumulatorBuilderPage() {
             </Box>
           ) : matches.length === 0 ? (
             <Typography color="textSecondary">
-              No hay partidos para esta fecha/filtro. Cambia la fecha, el deporte o ejecuta scrapers
-              multi-deporte (Forebet, Scores24, OddsPortal).
+              No hay partidos para esta fecha/filtro. Cambia la fecha, el deporte o ejecuta scrapers.
             </Typography>
           ) : (
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell padding="checkbox">Elegir</TableCell>
                   <TableCell>Deporte</TableCell>
                   <TableCell>Partido</TableCell>
-                  <TableCell>Tip</TableCell>
-                  <TableCell>Local / P1 gana</TableCell>
-                  <TableCell>Empate</TableCell>
-                  <TableCell>Visita / P2 gana</TableCell>
+                  <TableCell>Tip (referencia)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -291,9 +274,22 @@ export default function AccumulatorBuilderPage() {
                   const p = m.predictions[0];
                   const tip = normalizeTip(p?.betChoice);
                   const sportId = (m.sport ?? 'football') as SportKind;
-                  const allowDraw = sportId === 'football' || sportId === 'hockey' || sportId === 'handball';
+                  const checked = Boolean(selected[m.id]);
                   return (
-                    <TableRow key={m.id} hover>
+                    <TableRow
+                      key={m.id}
+                      hover
+                      selected={checked}
+                      onClick={() => toggleMatch(m)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          size="small"
+                          checked={checked}
+                          onChange={() => toggleMatch(m)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Chip size="small" label={sportLabel(sportId)} variant="outlined" />
                       </TableCell>
@@ -324,48 +320,6 @@ export default function AccumulatorBuilderPage() {
                           '—'
                         )}
                       </TableCell>
-                      {(['1', 'X', '2'] as const).map((c) => {
-                        if (c === 'X' && !allowDraw) {
-                          return (
-                            <TableCell key={c}>
-                              <Typography variant="caption" color="text.disabled">
-                                N/A
-                              </Typography>
-                            </TableCell>
-                          );
-                        }
-                        const odds = resolveOdds(c, p, 1.5);
-                        const book =
-                          c === '1'
-                            ? Number(p?.oddsHome ?? 0) > 1
-                            : c === 'X'
-                              ? Number(p?.oddsDraw ?? 0) > 1
-                              : Number(p?.oddsAway ?? 0) > 1;
-                        return (
-                          <TableCell key={c}>
-                            <Stack direction="row" alignItems="center" spacing={0.5}>
-                              <Checkbox
-                                size="small"
-                                checked={legs[m.id]?.betChoice === c}
-                                onChange={() => toggleLeg(m, c)}
-                              />
-                              <span>
-                                {book
-                                  ? String(
-                                      c === '1'
-                                        ? p?.oddsHome
-                                        : c === 'X'
-                                          ? p?.oddsDraw
-                                          : p?.oddsAway
-                                    )
-                                  : tip === c
-                                    ? `~${odds.toFixed(2)}`
-                                    : '—'}
-                              </span>
-                            </Stack>
-                          </TableCell>
-                        );
-                      })}
                     </TableRow>
                   );
                 })}
