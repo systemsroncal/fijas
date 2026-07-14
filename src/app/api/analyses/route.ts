@@ -680,9 +680,6 @@ export async function POST(request: Request) {
       accumulator.name ?? 'Combinada',
       { liveContext }
     );
-    const keyErrAcc = requireLlmKey(body.enrich, body.provider, keysByProvider);
-    if (keyErrAcc) return keyErrAcc;
-
     let payload: StructuredMatchPayload = {
       ...built,
       llmUsed: false,
