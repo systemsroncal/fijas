@@ -528,7 +528,10 @@ export async function fetchMatchStatus(input: {
         event.strAwayTeam ?? input.awayTeam
       );
       const cardsFilled = stats.some(
-        (s) => s.key.includes('yellow') && !isBlankStat(s.home) && !isBlankStat(s.away)
+        (s) =>
+          Boolean(s.key?.includes('yellow')) &&
+          !isBlankStat(s.home) &&
+          !isBlankStat(s.away)
       );
       if (cardsFilled) {
         notes.push('Tarjetas sincronizadas con la cronología.');
