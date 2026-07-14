@@ -141,11 +141,13 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
   NVIDIA: {
     ...OPENAI_COMPAT,
     url: 'https://integrate.api.nvidia.com/v1/chat/completions',
-    model: 'meta/llama-3.1-8b-instruct',
+    // Primary: 3.3-70b (el 3.1-8b suele estar DEGRADED en NIM free)
+    model: 'meta/llama-3.3-70b-instruct',
     buildBody: (messages) => ({
-      model: 'meta/llama-3.1-8b-instruct',
+      model: 'meta/llama-3.3-70b-instruct',
       messages,
       temperature: 0.3,
+      max_tokens: 2048,
     }),
   },
   MISTRAL: {
@@ -219,6 +221,20 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
   },
 };
 
+/** Modelos NIM de respaldo si el principal está DEGRADED (mismo proveedor NVIDIA). */
+const NVIDIA_MODEL_FALLBACKS = [
+  'meta/llama-3.3-70b-instruct',
+  'meta/llama-3.1-70b-instruct',
+  'meta/llama-3.2-3b-instruct',
+  'microsoft/phi-4-mini-instruct',
+  'google/gemma-2-2b-it',
+  'meta/llama-3.1-8b-instruct',
+] as const;
+
+function isNvidiaDegradedError(status: number, body: string): boolean {
+  return status === 400 && /DEGRADED function cannot be invoked/i.test(body);
+}
+
 /**
  * Prueba la conexión con un proveedor de IA.
  */
@@ -239,26 +255,19 @@ export async function testProviderConnection(
   }
 }
 
-/**
- * Llama al proveedor de IA con mensajes chat.
- */
-export async function callProvider(
+async function callOpenAiCompatOnce(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
   provider: AiProvider,
-  apiKey: string,
-  messages: ChatMessage[]
+  extractText: (json: unknown) => string
 ): Promise<string> {
-  const config = PROVIDER_CONFIG[provider];
-  let url = config.url;
-  if (provider === 'GEMINI') {
-    url = `${config.url}?key=${encodeURIComponent(apiKey)}`;
-  }
-
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: config.buildHeaders(apiKey),
-      body: JSON.stringify(config.buildBody(messages)),
+      headers,
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(45_000),
     });
   } catch (err) {
@@ -272,16 +281,80 @@ export async function callProvider(
   }
 
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${provider} error ${res.status}: ${body.slice(0, 200)}`);
+    const errBody = await res.text();
+    const error = new Error(
+      `${provider} error ${res.status}: ${errBody.slice(0, 200)}`
+    ) as Error & { status?: number; body?: string };
+    error.status = res.status;
+    error.body = errBody;
+    throw error;
   }
 
   const json = await res.json();
-  const text = config.extractText(json);
+  const text = extractText(json);
   if (!text?.trim()) {
     throw new Error(`${provider} devolvió respuesta vacía. Revisa modelo/cuota de la API.`);
   }
   return text;
+}
+
+/**
+ * Llama al proveedor de IA con mensajes chat.
+ * En NVIDIA, si un modelo está DEGRADED, prueba otros del mismo proveedor.
+ */
+export async function callProvider(
+  provider: AiProvider,
+  apiKey: string,
+  messages: ChatMessage[]
+): Promise<string> {
+  const config = PROVIDER_CONFIG[provider];
+  let url = config.url;
+  if (provider === 'GEMINI') {
+    url = `${config.url}?key=${encodeURIComponent(apiKey)}`;
+  }
+
+  if (provider === 'NVIDIA') {
+    let lastErr: Error | null = null;
+    for (const model of NVIDIA_MODEL_FALLBACKS) {
+      try {
+        return await callOpenAiCompatOnce(
+          url,
+          config.buildHeaders(apiKey),
+          {
+            model,
+            messages,
+            temperature: 0.3,
+            max_tokens: 2048,
+          },
+          provider,
+          config.extractText
+        );
+      } catch (err) {
+        const e = err as Error & { status?: number; body?: string };
+        lastErr = e;
+        if (isNvidiaDegradedError(e.status ?? 0, e.body ?? e.message)) {
+          continue; // siguiente modelo NIM
+        }
+        // 404 modelo inexistente → seguir; otros errores → abortar
+        if (e.status === 404 || /model.*(not found|does not exist)/i.test(e.body ?? '')) {
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error(
+      lastErr?.message ??
+        'NVIDIA: todos los modelos NIM estánaron (DEGRADED). Prueba Gemini u otro proveedor, o reintenta más tarde.'
+    );
+  }
+
+  return callOpenAiCompatOnce(
+    url,
+    config.buildHeaders(apiKey),
+    config.buildBody(messages),
+    provider,
+    config.extractText
+  );
 }
 
 export type AnalysisResult = {
