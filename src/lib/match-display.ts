@@ -12,6 +12,18 @@ const JUNK_CONTAINS =
  * Detecta filas basura del scraper (cabeceras de tabla parseadas como partidos).
  */
 const TIME_ONLY = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+/** Fecha parseada como “equipo”: 14/07, 14-07, 2026-07-14 */
+const DATE_ONLY =
+  /^(?:\d{1,2}[\/.\-]\d{1,2}(?:[\/.\-]\d{2,4})?|\d{4}-\d{2}-\d{2})$/;
+
+function looksLikeDateNotTeam(s: string): boolean {
+  return DATE_ONLY.test(s.trim());
+}
+
+function looksLikeMetaNotTeam(s: string): boolean {
+  const t = s.trim();
+  return TIME_ONLY.test(t) || looksLikeDateNotTeam(t) || /^\d{1,4}$/.test(t);
+}
 
 export function isJunkMatch(homeTeam: string, awayTeam: string): boolean {
   const h = homeTeam.trim();
@@ -19,6 +31,10 @@ export function isJunkMatch(homeTeam: string, awayTeam: string): boolean {
   if (!h || !a) return true;
   if (h.length < 3 || a.length < 3) return true;
   if (TIME_ONLY.test(h) || TIME_ONLY.test(a)) return true;
+  if (looksLikeDateNotTeam(h) || looksLikeDateNotTeam(a)) return true;
+  // "14/07" + "France Vs Spain" sin reparar, o un lado aún con "vs" y el otro meta
+  if (/\bvs\.?\b/i.test(a) && looksLikeMetaNotTeam(h)) return true;
+  if (/\bvs\.?\b/i.test(h) && looksLikeMetaNotTeam(a)) return true;
   if (JUNK_EXACT.test(h) || JUNK_EXACT.test(a)) return true;
   if (JUNK_CONTAINS.test(h) || JUNK_CONTAINS.test(a)) return true;
   // Ambos genéricos tipo Time/Match o Date/Score
@@ -356,7 +372,9 @@ function splitVs(text: string): { home: string; away: string } | null {
 }
 
 /**
- * Corrige filas SaferTip: Local=hora, Visitante="A Vs B".
+ * Corrige filas mal parseadas:
+ * - Local=hora → Visitante="A Vs B"
+ * - Local=fecha (14/07) → Visitante="France Vs Spain"
  */
 export function repairMisparsedMatch(input: {
   homeTeam: string;
@@ -369,36 +387,46 @@ export function repairMisparsedMatch(input: {
   let kickoff = input.kickoff?.trim() || null;
   let repaired = false;
 
-  // Caso 1: home es hora y away trae "A Vs B"
-  if (TIME_CELL.test(home)) {
+  // Caso 1: home es hora/fecha y away trae "A Vs B"
+  if (looksLikeMetaNotTeam(home)) {
     const split = splitVs(away);
     if (split) {
-      if (!kickoff) kickoff = home.match(TIME_CELL)?.[1] ?? home;
+      if (TIME_CELL.test(home) && !kickoff) kickoff = home.match(TIME_CELL)?.[1] ?? home;
       home = split.home;
       away = split.away;
       repaired = true;
     }
   }
 
-  // Caso 2: home contiene "vs" completo y away es basura/corto
+  // Caso 2: home contiene "vs" completo y away es basura/corto/fecha
   if (!repaired) {
     const splitHome = splitVs(home);
-    if (splitHome && (away.length < 3 || TIME_CELL.test(away) || /^(tbd|n\/?a)$/i.test(away))) {
+    if (
+      splitHome &&
+      (away.length < 3 ||
+        looksLikeMetaNotTeam(away) ||
+        /^(tbd|n\/?a)$/i.test(away))
+    ) {
       home = splitHome.home;
       away = splitHome.away;
       repaired = true;
     }
   }
 
-  // Caso 3: away contiene vs y home no parece equipo (muy corto o numérico)
+  // Caso 3: away contiene vs y home no parece equipo (hora, fecha, corto, numérico)
   if (!repaired) {
     const splitAway = splitVs(away);
-    if (splitAway && (TIME_CELL.test(home) || home.length < 3)) {
+    if (splitAway && (looksLikeMetaNotTeam(home) || home.length < 3)) {
       if (TIME_CELL.test(home) && !kickoff) kickoff = home.match(TIME_CELL)?.[1] ?? home;
       home = splitAway.home;
       away = splitAway.away;
       repaired = true;
     }
+  }
+
+  // Caso 4: ambos lados tienen basura residual
+  if (looksLikeDateNotTeam(home) || looksLikeDateNotTeam(away)) {
+    // Si no se pudo reparar, dejamos nombres pero isJunkMatch los filtrará
   }
 
   return { homeTeam: home, awayTeam: away, kickoff, repaired };

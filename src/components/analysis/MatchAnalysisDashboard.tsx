@@ -30,7 +30,12 @@ import {
 } from '@tabler/icons-react';
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { withBrief } from '@/lib/ai/analysis-brief';
-import { sportLabel, teamMonogram, type SportKind } from '@/lib/match-display';
+import {
+  repairMisparsedMatch,
+  sportLabel,
+  teamMonogram,
+  type SportKind,
+} from '@/lib/match-display';
 import MatchResultStatsPanel from '@/components/analysis/MatchResultStatsPanel';
 import { proxiedMediaUrl } from '@/lib/media-proxy';
 
@@ -112,7 +117,20 @@ export default function MatchAnalysisDashboard({
     payload?.probs && Array.isArray(payload.markets) && payload.scoreline
   );
 
-  const m = valid ? payload.match : undefined;
+  const rawMatch = valid ? payload.match : undefined;
+  const m = useMemo(() => {
+    if (!rawMatch?.homeTeam || !rawMatch?.awayTeam) return rawMatch;
+    const fixed = repairMisparsedMatch({
+      homeTeam: rawMatch.homeTeam,
+      awayTeam: rawMatch.awayTeam,
+      league: rawMatch.league,
+    });
+    return {
+      ...rawMatch,
+      homeTeam: fixed.homeTeam,
+      awayTeam: fixed.awayTeam,
+    };
+  }, [rawMatch]);
   const brief = valid ? payload.brief ?? withBrief(payload).brief : undefined;
   const homeLabel = `${m?.homeTeam ?? 'Local'} GANA`;
   const awayLabel = `${m?.awayTeam ?? 'Visitante'} GANA`;

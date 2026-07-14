@@ -14,6 +14,16 @@ from sites.base import empty_result, soup_from_url
 logger = logging.getLogger(__name__)
 
 _TIME_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
+# Fecha mal mapeada como equipo: 14/07, 14-07, 2026-07-14
+_DATE_RE = re.compile(
+    r"^(?:\d{1,2}[/\.\-]\d{1,2}(?:[/\.\-]\d{2,4})?|\d{4}-\d{2}-\d{2})$"
+)
+
+
+def _is_meta_cell(text: str) -> bool:
+    """True si la celda es hora/fecha/número, no un nombre de equipo."""
+    t = text.strip()
+    return bool(_TIME_RE.match(t) or _DATE_RE.match(t) or re.fullmatch(r"\d{1,4}", t))
 
 _SPORT_PATH_HINTS = (
     ("basketball", "Basketball"),
@@ -74,22 +84,37 @@ def _guess_teams(cells: list[str]) -> tuple[str | None, str | None, str | None]:
         if _TIME_RE.match(t) and kickoff is None:
             kickoff = t
             continue
+        # Nunca tratar una fecha como equipo; solo guardar contexto
+        if _DATE_RE.match(t):
+            continue
         split = _split_vs(t)
-        if split:
+        if split and not _is_meta_cell(split[0]) and not _is_meta_cell(split[1]):
             return split[0], split[1], kickoff
 
-    if len(cells) >= 3 and _TIME_RE.match(cells[1].strip()):
+    if len(cells) >= 3 and _is_meta_cell(cells[1].strip()):
         split = _split_vs(cells[2])
-        if split:
-            return split[0], split[1], cells[1].strip()
+        if split and not _is_meta_cell(split[0]) and not _is_meta_cell(split[1]):
+            ko = cells[1].strip() if _TIME_RE.match(cells[1].strip()) else kickoff
+            return split[0], split[1], ko
 
     if len(cells) >= 3:
         h, a = cells[1].strip(), cells[2].strip()
-        if _TIME_RE.match(h):
+        if _is_meta_cell(h):
             split = _split_vs(a)
-            if split:
-                return split[0], split[1], h
-        if not _TIME_RE.match(h) and not _TIME_RE.match(a):
+            if split and not _is_meta_cell(split[0]) and not _is_meta_cell(split[1]):
+                ko = h if _TIME_RE.match(h) else kickoff
+                return split[0], split[1], ko
+            # Fecha/"14/07" + título sin poder partir → descartar fila
+            return None, None, kickoff
+        if _is_meta_cell(a):
+            return None, None, kickoff
+        # Si away trae "A Vs B" aunque home parezca texto, partir
+        split = _split_vs(a)
+        if split and not _is_meta_cell(split[0]) and not _is_meta_cell(split[1]):
+            # home era basura tipo liga corta; preferir split del away
+            if _is_meta_cell(h) or len(h) <= 3 or _DATE_RE.match(h):
+                return split[0], split[1], kickoff
+        if not _is_meta_cell(h) and not _is_meta_cell(a) and " vs " not in a.lower():
             return h, a, kickoff
     return None, None, kickoff
 

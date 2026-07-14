@@ -1,8 +1,7 @@
 import React from 'react';
 import Menuitems from './MenuItems';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import {
-  Logo,
   Sidebar as MUI_Sidebar,
   Menu,
   MenuItem,
@@ -46,7 +45,7 @@ const renderMenuItems = (items: any, pathDirect: any) => {
   });
 };
 
-const SidebarItems = ({ collapsed }: { collapsed?: boolean }) => {
+const SidebarItems = () => {
   const pathname = usePathname();
   const pathDirect = pathname;
 
@@ -57,9 +56,22 @@ const SidebarItems = ({ collapsed }: { collapsed?: boolean }) => {
       themeColor="#5D87FF"
       themeSecondaryColor="#49beff"
     >
-      <Logo img="/images/logos/dark-logo.svg" component={Link} to="/">
-        {collapsed ? 'LF' : 'LAS FIJAS'}
-      </Logo>
+      <Box px={2.5} py={2.5}>
+        <Typography
+          component={Link}
+          href="/"
+          sx={{
+            fontWeight: 800,
+            fontSize: '1.35rem',
+            letterSpacing: '0.04em',
+            color: 'primary.main',
+            textDecoration: 'none',
+            display: 'inline-block',
+          }}
+        >
+          LAS FIJAS
+        </Typography>
+      </Box>
       {renderMenuItems(Menuitems, pathDirect)}
     </MUI_Sidebar>
   );

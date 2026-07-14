@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { validateApiSecret } from '@/lib/api-guard';
 import { buildMatchKey } from '@/lib/match-key';
-import { repairMisparsedMatch } from '@/lib/match-display';
+import { isJunkMatch, repairMisparsedMatch } from '@/lib/match-display';
 import { LogCategory, Prisma } from '@prisma/client';
 
 const predictionSchema = z.object({
@@ -78,6 +78,11 @@ export async function POST(request: Request) {
       const homeTeam = fixed.homeTeam;
       const awayTeam = fixed.awayTeam;
       const kickoff = fixed.kickoff ?? pred.kickoff;
+
+      // No persistir basura tipo "14/07" vs "France Vs Spain"
+      if (isJunkMatch(homeTeam, awayTeam)) {
+        continue;
+      }
 
       const matchDate = new Date(pred.matchDate);
       const matchKey = buildMatchKey(matchDate, homeTeam, awayTeam, pred.league);
