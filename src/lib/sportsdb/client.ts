@@ -28,22 +28,26 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function respectRateLimit() {
+/** false = no conviene esperar (análisis no debe colgarse). */
+async function respectRateLimit(): Promise<boolean> {
   const now = Date.now();
   while (requestTimestamps.length && now - requestTimestamps[0] > 60_000) {
     requestTimestamps.shift();
   }
   if (requestTimestamps.length >= MAX_PER_MINUTE) {
     const wait = 60_000 - (now - requestTimestamps[0]) + 50;
+    // Antes dormía hasta 60s+ y el análisis “nunca terminaba”
+    if (wait > 4_000) return false;
     await sleep(Math.max(wait, 200));
   }
   requestTimestamps.push(Date.now());
+  return true;
 }
 
 export async function sportsDbFetch<T = unknown>(
   path: string,
   params: Record<string, string> = {},
-  opts?: { bypassCache?: boolean }
+  opts?: { bypassCache?: boolean; retried?: boolean }
 ): Promise<T | null> {
   const qs = new URLSearchParams(params).toString();
   const url = `${BASE}/${apiKey()}/${path}${qs ? `?${qs}` : ''}`;
@@ -56,22 +60,34 @@ export async function sportsDbFetch<T = unknown>(
     }
   }
 
-  await respectRateLimit();
+  const allowed = await respectRateLimit();
+  if (!allowed) {
+    const stale = cache.get(cacheKey);
+    return (stale?.data as T) ?? null;
+  }
+
   try {
     const res = await fetch(url, {
       headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(12_000),
       next: { revalidate: 0 },
     });
     if (res.status === 429) {
-      await sleep(65_000);
-      return sportsDbFetch(path, params, { bypassCache: true });
+      // Un solo reintento corto; nunca sleep de 65s
+      if (!opts?.retried) {
+        await sleep(1_500);
+        return sportsDbFetch(path, params, { bypassCache: true, retried: true });
+      }
+      const stale = cache.get(cacheKey);
+      return (stale?.data as T) ?? null;
     }
     if (!res.ok) return null;
     const data = (await res.json()) as T;
     cache.set(cacheKey, { at: Date.now(), data });
     return data;
   } catch {
-    return null;
+    const stale = cache.get(cacheKey);
+    return (stale?.data as T) ?? null;
   }
 }
 

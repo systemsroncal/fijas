@@ -489,10 +489,12 @@ export async function resolveEventId(input: {
   awayTeam?: string;
   matchDateYmd?: string;
   sportKind?: string;
+  bypassCache?: boolean;
 }): Promise<{ event: SportsDbEvent | null; notes: string[] }> {
   const notes: string[] = [];
+  const bypass = input.bypassCache !== false;
   if (input.eventId) {
-    const ev = await lookupEvent(input.eventId, { bypassCache: true });
+    const ev = await lookupEvent(input.eventId, { bypassCache: bypass });
     if (ev) return { event: ev, notes };
   }
 
@@ -503,13 +505,13 @@ export async function resolveEventId(input: {
     if (!day.length && sport) day = await eventsOnDay(date);
     let matched = findEventInDayList(day, input.homeTeam, input.awayTeam);
     if (matched?.idEvent) {
-      const fresh = await lookupEvent(matched.idEvent, { bypassCache: true });
+      const fresh = await lookupEvent(matched.idEvent, { bypassCache: bypass });
       notes.push('Evento resuelto vía eventsday free.');
       return { event: fresh ?? matched, notes };
     }
     matched = await searchEvent(input.homeTeam, input.awayTeam);
     if (matched?.idEvent) {
-      const fresh = await lookupEvent(matched.idEvent, { bypassCache: true });
+      const fresh = await lookupEvent(matched.idEvent, { bypassCache: bypass });
       notes.push('Evento resuelto vía searchevents free.');
       return { event: fresh ?? matched, notes };
     }
@@ -559,9 +561,15 @@ export async function fetchMatchStatus(input: {
   sportKind?: string;
   scrapeIsLive?: boolean;
   includeDetails?: boolean;
+  /** false = usar caché (análisis). true = fresco (panel en vivo). Default true. */
+  bypassCache?: boolean;
 }): Promise<MatchStatusPayload> {
   const includeDetails = input.includeDetails !== false;
-  const { event, notes } = await resolveEventId(input);
+  const bypass = input.bypassCache !== false;
+  const { event, notes } = await resolveEventId({
+    ...input,
+    bypassCache: bypass,
+  });
   let eventScores = parseScore(event);
   const status = event?.strStatus ?? null;
 
@@ -572,7 +580,6 @@ export async function fetchMatchStatus(input: {
 
   // Siempre pedir timeline si hay evento: sincroniza goles aunque lookupevent vaya tarde
   if (event?.idEvent) {
-    const bypass = true; // live/FT: nunca servir caché vieja de marcador
     rawTl = await lookupEventTimeline(event.idEvent, { bypassCache: bypass });
     timeline = mapTimeline(rawTl);
 
@@ -606,7 +613,9 @@ export async function fetchMatchStatus(input: {
     if (hasGoalEvents && !status && phase !== 'finished') phase = 'live';
 
     if (includeDetails && (phase === 'live' || phase === 'finished' || hasGoalEvents || rawTl.length)) {
-      const rawStats = await lookupEventStats(event.idEvent, { bypassCache: bypass });
+      const rawStats = await lookupEventStats(event.idEvent, {
+        bypassCache: bypass,
+      });
       stats = mapStats(
         rawStats,
         rawTl,

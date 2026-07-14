@@ -222,10 +222,15 @@ export default function AnalysesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(90_000),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(typeof data.error === 'string' ? data.error : 'Análisis fallido');
+        setError(
+          typeof data.error === 'string'
+            ? data.error
+            : `Análisis fallido (${res.status}). Si elegiste Gemini, verifica la key en Ajustes.`
+        );
         return;
       }
 
@@ -248,7 +253,14 @@ export default function AnalysesPage() {
 
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error de red al analizar');
+      const msg = err instanceof Error ? err.message : 'Error de red al analizar';
+      if (/abort|timeout/i.test(msg)) {
+        setError(
+          'El análisis tardó más de 90s y se canceló. Prueba de nuevo o cambia de proveedor (NVIDIA suele ser más rápido).'
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setRunning(false);
     }

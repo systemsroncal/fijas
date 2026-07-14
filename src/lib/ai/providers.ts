@@ -253,11 +253,23 @@ export async function callProvider(
     url = `${config.url}?key=${encodeURIComponent(apiKey)}`;
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: config.buildHeaders(apiKey),
-    body: JSON.stringify(config.buildBody(messages)),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: config.buildHeaders(apiKey),
+      body: JSON.stringify(config.buildBody(messages)),
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/abort|timeout/i.test(msg)) {
+      throw new Error(
+        `${provider} no respondió en 45s. Revisa la key, el modelo o inténtalo de nuevo.`
+      );
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const body = await res.text();
@@ -265,7 +277,11 @@ export async function callProvider(
   }
 
   const json = await res.json();
-  return config.extractText(json);
+  const text = config.extractText(json);
+  if (!text?.trim()) {
+    throw new Error(`${provider} devolvió respuesta vacía. Revisa modelo/cuota de la API.`);
+  }
+  return text;
 }
 
 export type AnalysisResult = {

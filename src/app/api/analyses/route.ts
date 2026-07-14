@@ -53,6 +53,22 @@ function cornersFromDiagnostics(
   return { home: Number(m[1]), away: Number(m[2]) };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timeout ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
 const schema = z
   .object({
     mode: z.enum(['MATCH', 'ACCUMULATOR', 'RANDOM']).default('ACCUMULATOR'),
@@ -263,15 +279,20 @@ export async function POST(request: Request) {
       const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
       let ctx = toCtx(matchForAi);
       let matchDiagnostics: ReturnType<typeof buildMatchDiagnostics> | null = null;
-      // Live/FT con stats completas para IA + UI
+      // Live/FT con stats (tope 18s: no bloquear la IA si SportsDB va lento)
       try {
-        const st = await fetchMatchStatus({
-          homeTeam: ctx.homeTeam,
-          awayTeam: ctx.awayTeam,
-          matchDateYmd: localDateISO(),
-          scrapeIsLive: Boolean(match.isLive),
-          includeDetails: true,
-        });
+        const st = await withTimeout(
+          fetchMatchStatus({
+            homeTeam: ctx.homeTeam,
+            awayTeam: ctx.awayTeam,
+            matchDateYmd: localDateISO(),
+            scrapeIsLive: Boolean(match.isLive),
+            includeDetails: true,
+            bypassCache: false,
+          }),
+          18_000,
+          'match-status'
+        );
         matchDiagnostics = buildMatchDiagnostics(st);
         const lastMin = [...st.timeline]
           .map((t) => Number(t.minute))
@@ -285,7 +306,7 @@ export async function POST(request: Request) {
           liveMinute: lastMin ?? null,
         };
       } catch {
-        /* sin live: modelo pre-partido */
+        /* sin live: seguir con modelo + LLM */
       }
       let payload = buildModelPayload(ctx, 'MATCH', { form });
       const cornerPair = cornersFromDiagnostics(matchDiagnostics);
@@ -419,12 +440,17 @@ export async function POST(request: Request) {
       // Stats live del partido elegido (si hay)
       if (payload.match?.homeTeam && payload.match?.awayTeam) {
         try {
-          const st = await fetchMatchStatus({
-            homeTeam: payload.match.homeTeam,
-            awayTeam: payload.match.awayTeam,
-            matchDateYmd: date,
-            includeDetails: true,
-          });
+          const st = await withTimeout(
+            fetchMatchStatus({
+              homeTeam: payload.match.homeTeam,
+              awayTeam: payload.match.awayTeam,
+              matchDateYmd: date,
+              includeDetails: true,
+              bypassCache: false,
+            }),
+            18_000,
+            'match-status-random'
+          );
           const diag = buildMatchDiagnostics(st);
           const cornerPair = cornersFromDiagnostics(diag);
           payload = {
@@ -615,15 +641,20 @@ export async function POST(request: Request) {
       let livePhase: 'scheduled' | 'live' | 'finished' | 'unknown' | null = null;
       let liveMinute: number | null = null;
 
-      if (i < 5) {
+      if (i < 3) {
         try {
-          const st = await fetchMatchStatus({
-            homeTeam: c.homeTeam,
-            awayTeam: c.awayTeam,
-            matchDateYmd: c.matchDateYmd,
-            scrapeIsLive: c.scrapeIsLive,
-            includeDetails: false,
-          });
+          const st = await withTimeout(
+            fetchMatchStatus({
+              homeTeam: c.homeTeam,
+              awayTeam: c.awayTeam,
+              matchDateYmd: c.matchDateYmd,
+              scrapeIsLive: c.scrapeIsLive,
+              includeDetails: false,
+              bypassCache: false,
+            }),
+            10_000,
+            'match-status-leg'
+          );
           liveHomeScore = st.homeScore;
           liveAwayScore = st.awayScore;
           livePhase = st.phase;
