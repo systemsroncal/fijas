@@ -7,24 +7,25 @@ import { isJunkMatch, repairMisparsedMatch } from '@/lib/match-display';
 import { LogCategory, Prisma } from '@prisma/client';
 
 const predictionSchema = z.object({
-  externalId: z.string().optional(),
+  externalId: z.string().nullish(),
   matchDate: z.string(),
-  kickoff: z.string().optional(),
+  // Scrapers envían null cuando no hay hora (optional solo admite undefined)
+  kickoff: z.string().nullish(),
   league: z.string(),
   homeTeam: z.string(),
   awayTeam: z.string(),
   betType: z.string().default('1X2'),
-  betChoice: z.string().optional(),
-  odds: z.number().optional(),
-  oddsHome: z.number().optional(),
-  oddsDraw: z.number().optional(),
-  oddsAway: z.number().optional(),
-  oddsOver: z.number().optional(),
-  oddsUnder: z.number().optional(),
-  oddsBttsYes: z.number().optional(),
-  oddsBttsNo: z.number().optional(),
-  statsNote: z.string().optional(),
-  isLive: z.boolean().optional(),
+  betChoice: z.string().nullish(),
+  odds: z.number().nullish(),
+  oddsHome: z.number().nullish(),
+  oddsDraw: z.number().nullish(),
+  oddsAway: z.number().nullish(),
+  oddsOver: z.number().nullish(),
+  oddsUnder: z.number().nullish(),
+  oddsBttsYes: z.number().nullish(),
+  oddsBttsNo: z.number().nullish(),
+  statsNote: z.string().nullish(),
+  isLive: z.boolean().nullish(),
 });
 
 const bodySchema = z.object({
@@ -77,7 +78,8 @@ export async function POST(request: Request) {
       });
       const homeTeam = fixed.homeTeam;
       const awayTeam = fixed.awayTeam;
-      const kickoff = fixed.kickoff ?? pred.kickoff;
+      const kickoffRaw = fixed.kickoff ?? pred.kickoff ?? null;
+      const kickoff = kickoffRaw?.trim() ? kickoffRaw.trim() : null;
 
       // No persistir basura tipo "14/07" vs "France Vs Spain"
       if (isJunkMatch(homeTeam, awayTeam)) {

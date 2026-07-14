@@ -196,7 +196,7 @@ class GenericTipsScraper(BaseHtmlScraper):
             predictions.append(
                 {
                     "matchDate": match_date,
-                    "kickoff": kickoff,
+                    "kickoff": kickoff or "",
                     "league": league,
                     "homeTeam": home,
                     "awayTeam": away,
