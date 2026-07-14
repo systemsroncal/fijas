@@ -23,6 +23,35 @@ import { isMatchStillOpenPeru, peruDateISO } from '@/lib/timezone';
 import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
 import { applySportsDbToPayload } from '@/lib/sportsdb/enrich';
 import { fetchMatchStatus } from '@/lib/sportsdb/match-status';
+import { buildMatchDiagnostics } from '@/lib/sportsdb/player-diagnostics';
+
+function requireLlmKey(
+  enrich: boolean | undefined,
+  provider: AiProvider,
+  keysByProvider: Partial<Record<AiProvider, string>>
+): NextResponse | null {
+  if (enrich === false) return null;
+  if (!keysByProvider[provider]) {
+    return NextResponse.json(
+      {
+        error: `Para analizar con ${provider} necesitas una API key activa de ese proveedor en Ajustes. No se usa otra IA automáticamente.`,
+      },
+      { status: 400 }
+    );
+  }
+  return null;
+}
+
+function cornersFromDiagnostics(
+  diagnostics: ReturnType<typeof buildMatchDiagnostics> | null
+): { home: number | null; away: number | null } {
+  if (!diagnostics) return { home: null, away: null };
+  const row = diagnostics.teamStats.find((s) => /c[oó]rner|corner/i.test(s.name));
+  if (!row) return { home: null, away: null };
+  const m = row.value.match(/([\d.]+)\s*[–-]\s*([\d.]+)/);
+  if (!m) return { home: null, away: null };
+  return { home: Number(m[1]), away: Number(m[2]) };
+}
 
 const schema = z
   .object({
@@ -194,6 +223,10 @@ export async function POST(request: Request) {
       keysByProvider[k.provider] = decryptSecret(k.encryptedKey);
     }
 
+    // enrich=true exige key del proveedor elegido (sin fallback a NVIDIA/otro)
+    const earlyKeyErr = requireLlmKey(body.enrich, body.provider, keysByProvider);
+    if (earlyKeyErr) return earlyKeyErr;
+
     if (body.mode === 'MATCH') {
       if (!body.matchId) {
         return NextResponse.json({ error: 'matchId requerido' }, { status: 400 });
@@ -229,15 +262,17 @@ export async function POST(request: Request) {
 
       const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
       let ctx = toCtx(matchForAi);
-      // Condicionar Poisson al marcador live/FT (timeline sincroniza goles)
+      let matchDiagnostics: ReturnType<typeof buildMatchDiagnostics> | null = null;
+      // Live/FT con stats completas para IA + UI
       try {
         const st = await fetchMatchStatus({
           homeTeam: ctx.homeTeam,
           awayTeam: ctx.awayTeam,
           matchDateYmd: localDateISO(),
           scrapeIsLive: Boolean(match.isLive),
-          includeDetails: false,
+          includeDetails: true,
         });
+        matchDiagnostics = buildMatchDiagnostics(st);
         const lastMin = [...st.timeline]
           .map((t) => Number(t.minute))
           .filter((n) => !Number.isNaN(n))
@@ -253,6 +288,22 @@ export async function POST(request: Request) {
         /* sin live: modelo pre-partido */
       }
       let payload = buildModelPayload(ctx, 'MATCH', { form });
+      const cornerPair = cornersFromDiagnostics(matchDiagnostics);
+      payload = {
+        ...payload,
+        matchDiagnostics,
+        expected: {
+          ...payload.expected,
+          cornersHome: cornerPair.home ?? payload.expected.cornersHome,
+          cornersAway: cornerPair.away ?? payload.expected.cornersAway,
+          note:
+            matchDiagnostics?.teamStats.length
+              ? `${payload.expected.note} Stats live/FT incluidas para la IA.`
+              : payload.expected.note,
+        },
+        llmUsed: false,
+        llmProvider: null,
+      };
       // TheSportsDB solo en análisis (no en scrapers): forma/calendario profundos
       payload = await applySportsDbToPayload(payload, {
         matchDateYmd: localDateISO(),
@@ -262,7 +313,7 @@ export async function POST(request: Request) {
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'deep-poisson+sportsdb';
 
-      if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
+      if (body.enrich !== false) {
         const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
         payload = enriched.payload;
         raw = enriched.raw;
@@ -365,11 +416,39 @@ export async function POST(request: Request) {
         matchDateYmd: date,
         fetchBadges: true,
       });
+      // Stats live del partido elegido (si hay)
+      if (payload.match?.homeTeam && payload.match?.awayTeam) {
+        try {
+          const st = await fetchMatchStatus({
+            homeTeam: payload.match.homeTeam,
+            awayTeam: payload.match.awayTeam,
+            matchDateYmd: date,
+            includeDetails: true,
+          });
+          const diag = buildMatchDiagnostics(st);
+          const cornerPair = cornersFromDiagnostics(diag);
+          payload = {
+            ...payload,
+            matchDiagnostics: diag,
+            expected: {
+              ...payload.expected,
+              cornersHome: cornerPair.home ?? payload.expected.cornersHome,
+              cornersAway: cornerPair.away ?? payload.expected.cornersAway,
+            },
+            llmUsed: false,
+            llmProvider: null,
+          };
+        } catch {
+          payload = { ...payload, llmUsed: false, llmProvider: null };
+        }
+      } else {
+        payload = { ...payload, llmUsed: false, llmProvider: null };
+      }
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'deep-random+sportsdb';
 
-      if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
+      if (body.enrich !== false) {
         const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
         payload = enriched.payload;
         raw = enriched.raw;
@@ -601,7 +680,14 @@ export async function POST(request: Request) {
       accumulator.name ?? 'Combinada',
       { liveContext }
     );
-    let payload: StructuredMatchPayload = built;
+    const keyErrAcc = requireLlmKey(body.enrich, body.provider, keysByProvider);
+    if (keyErrAcc) return keyErrAcc;
+
+    let payload: StructuredMatchPayload = {
+      ...built,
+      llmUsed: false,
+      llmProvider: null,
+    };
     // TheSportsDB en la pierna ancla (máx. 1 partido) para no quemar 30 req/min
     payload = await applySportsDbToPayload(payload, {
       matchDateYmd: localDateISO(),
@@ -611,7 +697,7 @@ export async function POST(request: Request) {
     let providerUsed: AiProvider = body.provider;
     let promptUsed = 'deep-accumulator+sportsdb';
 
-    if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
+    if (body.enrich !== false) {
       const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
       payload = enriched.payload;
       raw = enriched.raw;

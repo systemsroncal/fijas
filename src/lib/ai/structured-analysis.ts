@@ -352,8 +352,7 @@ function extractJson(raw: string): unknown {
 }
 
 /**
- * LLM de análisis profundo: debe tomarse el tiempo de razonar con scrape + TheSportsDB + Poisson.
- * No inventa mercados/props; solo interpreta datos entregados.
+ * LLM de análisis profundo — SOLO el proveedor elegido (sin fallback silencioso a NVIDIA/otro).
  */
 export async function enrichPayloadWithLlm(
   preferred: AiProvider,
@@ -365,88 +364,91 @@ export async function enrichPayloadWithLlm(
   providerUsed: AiProvider;
   promptUsed: string;
 }> {
+  const key = keysByProvider[preferred];
+  if (!key) {
+    throw new Error(
+      `No hay API key activa para ${preferred}. Configúrala en Ajustes → API keys y vuelve a analizar.`
+    );
+  }
+
   const liveHint =
-    base.accumulatorMeta?.liveContext?.length || base.sportsDb?.matchedEvent?.score
-      ? '\nIMPORTANTE: hay marcador/estadísticas en vivo o FT. CONDICIONA el análisis a ese resultado actual (no ignores un 2-0 en curso).'
+    base.matchDiagnostics?.score ||
+    base.accumulatorMeta?.liveContext?.length ||
+    base.sportsDb?.matchedEvent?.score
+      ? '\nIMPORTANTE: hay marcador/estadísticas en vivo o FT. CONDICIONA el análisis a ese resultado actual.'
       : '';
 
-  const prompt = `Eres un analista profesional de apuestas. Debes TOMARTE EL TIEMPO y analizar EN PROFUNDIDAD.
+  const prompt = `Eres un analista profesional de apuestas. Analiza EN PROFUNDIDAD con los datos entregados.
 
 Obligatorio:
-1) Cruza tip/cuotas scrapeadas + modelo Poisson + datos TheSportsDB (si existen).
-2) Evalúa forma reciente, equilibrio 1X2, mercados value/safe/risky y riesgos.
-3) No inventes jugadores, cuotas, marcadores ni estadísticas ausentes.
-4) Si faltan datos TheSportsDB (API free limitada), dilo explícitamente y apoya en scraping+modelo.
-5) Si hay liveContext o marcador FT, úsalo como prioridad sobre la predicción pre-partido.
-6) Responde SOLO JSON válido:
-{"edgeText":"<análisis profundo en español, 4-8 frases, estructurado>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>"}
+1) Cruza tip/cuotas scrapeadas + Poisson + TheSportsDB (forma) + matchDiagnostics (stats live/FT).
+2) Comenta posesión, tiros (totales/a puerta), córners, faltas, tarjetas si existen en teamStats.
+3) Comenta jugadores destacados de "players" (goles, asistencias, tarjetas, tiros a puerta mínimos).
+4) Si falta un dato (p.ej. tackles por jugador), dilo: la API free no lo trae; NO lo inventes.
+5) Evalúa 1X2, value/safe/risky y riesgos concretos.
+6) Si hay marcador live/FT, priorízalo sobre el pre-partido.
+7) Responde SOLO JSON válido:
+{"edgeText":"<análisis en español, 6-12 frases, con secciones cortas: Marcador/contexto, Stats equipo, Jugadores, Apuestas>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>","statHighlights":["<hallazgo 1>","<hallazgo 2>","<hallazgo 3>"]}
 ${liveHint}
 
-Datos (scrape + modelo + sportsdb + live):
+Datos:
 ${JSON.stringify({
     match: base.match,
     probs: base.probs,
     scoreline: base.scoreline,
+    expected: base.expected,
     form: base.form,
     sportsDb: base.sportsDb ?? null,
+    matchDiagnostics: base.matchDiagnostics ?? null,
     markets: base.markets.slice(0, 12),
     picks: base.picks,
     accumulatorMeta: base.accumulatorMeta ?? null,
     liveContext: base.accumulatorMeta?.liveContext ?? null,
-    deepAnalysis: true,
   })}`;
 
-  const order: AiProvider[] = [
-    preferred,
-    ...(Object.keys(keysByProvider).filter((p) => p !== preferred) as AiProvider[]),
-  ];
+  const raw = await callProvider(preferred, key, [
+    {
+      role: 'system',
+      content:
+        'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa matchDiagnostics si existe.',
+    },
+    { role: 'user', content: prompt },
+  ]);
 
-  let lastError: Error | null = null;
-  for (const provider of order) {
-    const key = keysByProvider[provider];
-    if (!key) continue;
-    try {
-      const raw = await callProvider(provider, key, [
-        {
-          role: 'system',
-          content:
-            'Eres analista senior. Piensa con calma y profundidad. JSON válido únicamente. Cero invención de datos. Español claro. Si hay marcador en vivo, priorízalo.',
-        },
-        { role: 'user', content: prompt },
-      ]);
-      const data = extractJson(raw) as {
-        edgeText?: string;
-        confidenceDelta?: number;
-        depthNotes?: string;
-      };
-      const cleaned = sanitizeNarrative(data.edgeText, base.edgeSummary);
-      const depth =
-        typeof data.depthNotes === 'string' && data.depthNotes.trim()
-          ? ` | Profundidad: ${data.depthNotes.trim().slice(0, 280)}`
-          : '';
-      const next: StructuredMatchPayload = {
-        ...base,
-        deepAnalysis: true,
-        edgeSummary: `${cleaned}${depth}`,
-        confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 30, 92),
-        disclaimer: base.disclaimer,
-      };
-      next.brief = buildAnalysisBrief(next);
-      return {
-        payload: next,
-        raw,
-        providerUsed: provider,
-        promptUsed: prompt,
-      };
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
+  const data = extractJson(raw) as {
+    edgeText?: string;
+    confidenceDelta?: number;
+    depthNotes?: string;
+    statHighlights?: string[];
+  };
+  const cleaned = sanitizeNarrative(data.edgeText, base.edgeSummary);
+  const highlights = Array.isArray(data.statHighlights)
+    ? data.statHighlights
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .slice(0, 5)
+        .map((x) => x.trim())
+    : [];
+  const depth =
+    typeof data.depthNotes === 'string' && data.depthNotes.trim()
+      ? ` | Profundidad: ${data.depthNotes.trim().slice(0, 280)}`
+      : '';
+  const hiBlock = highlights.length
+    ? `\n\nHallazgos stats: ${highlights.map((h) => `• ${h}`).join(' ')}`
+    : '';
 
-  if (lastError && Object.keys(keysByProvider).length === 0) throw lastError;
+  const next: StructuredMatchPayload = {
+    ...base,
+    deepAnalysis: true,
+    llmUsed: true,
+    llmProvider: preferred,
+    edgeSummary: `${cleaned}${hiBlock}${depth}`,
+    confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 30, 92),
+    disclaimer: base.disclaimer,
+  };
+  next.brief = buildAnalysisBrief(next);
   return {
-    payload: { ...base, deepAnalysis: true },
-    raw: JSON.stringify(base),
+    payload: next,
+    raw,
     providerUsed: preferred,
     promptUsed: prompt,
   };

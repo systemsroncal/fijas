@@ -260,12 +260,26 @@ export default function MatchAnalysisDashboard({
             spacing={2}
           >
             <Box>
-              <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+              <Stack direction="row" spacing={1} alignItems="center" mb={1} flexWrap="wrap">
                 <SportIcon sport={m?.sport} />
                 <Typography variant="overline" color="text.secondary">
                   {sportLabel((m?.sport as SportKind) ?? 'football')} · {m?.league ?? 'Scanner'} ·{' '}
                   {payload.mode}
                 </Typography>
+                {payload.llmUsed ? (
+                  <Chip
+                    size="small"
+                    color="success"
+                    label={`IA ${payload.llmProvider ?? 'OK'}`}
+                  />
+                ) : (
+                  <Chip
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    label="Sin IA (solo modelo)"
+                  />
+                )}
               </Stack>
               {m && m.homeTeam !== 'N/A' ? (
                 <Stack
@@ -762,6 +776,83 @@ export default function MatchAnalysisDashboard({
             </Box>
           )}
 
+          {payload.matchDiagnostics &&
+            (payload.matchDiagnostics.teamStats.length > 0 ||
+              payload.matchDiagnostics.players.length > 0) && (
+              <Box>
+                <Typography fontWeight={700} gutterBottom>
+                  Diagnósticos del partido
+                </Typography>
+                {payload.matchDiagnostics.teamStats.length > 0 && (
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr' },
+                      gap: 1,
+                      mb: 2,
+                    }}
+                  >
+                    {payload.matchDiagnostics.teamStats.map((s) => (
+                      <Box
+                        key={s.name}
+                        sx={{
+                          p: 1.25,
+                          borderRadius: 1.5,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          bgcolor: 'grey.50',
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {s.name}
+                        </Typography>
+                        <Typography fontWeight={700} variant="body2">
+                          {s.value}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+                {payload.matchDiagnostics.players.length > 0 && (
+                  <Box sx={{ overflowX: 'auto' }}>
+                    <Typography variant="caption" fontWeight={700} color="text.secondary">
+                      Jugadores (cronología · tiros a puerta = mín. por gol)
+                    </Typography>
+                    <Table size="small" sx={{ mt: 0.5 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Jugador</TableCell>
+                          <TableCell>Equipo</TableCell>
+                          <TableCell align="center">Goles</TableCell>
+                          <TableCell align="center">Asist.</TableCell>
+                          <TableCell align="center">TA</TableCell>
+                          <TableCell align="center">TR</TableCell>
+                          <TableCell align="center">Tiros puerta*</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {payload.matchDiagnostics.players.slice(0, 12).map((p) => (
+                          <TableRow key={`${p.player}-${p.team}`} hover>
+                            <TableCell>{p.player}</TableCell>
+                            <TableCell>{p.team}</TableCell>
+                            <TableCell align="center">{p.goals}</TableCell>
+                            <TableCell align="center">{p.assists}</TableCell>
+                            <TableCell align="center">{p.yellowCards}</TableCell>
+                            <TableCell align="center">{p.redCards}</TableCell>
+                            <TableCell align="center">{p.shotsOnTargetMin}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                      * TheSportsDB free no publica tackles ni tiros Opta por jugador. La IA usa
+                      estos mínimos + stats de equipo.
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
+
           <Box
             sx={{
               p: 2,
@@ -774,6 +865,11 @@ export default function MatchAnalysisDashboard({
             <Typography fontWeight={700} gutterBottom>
               {brief?.headline ?? 'Resumen del análisis'}
             </Typography>
+            {payload.edgeSummary && (
+              <Typography variant="body2" sx={{ mb: 1.5, whiteSpace: 'pre-wrap' }}>
+                {payload.edgeSummary}
+              </Typography>
+            )}
             <Stack component="ul" spacing={0.75} sx={{ m: 0, pl: 2.5 }}>
               {(brief?.bullets ?? []).map((b, i) => {
                 const partido = b.match(/^Partido:\s*(.+?)\s*\(/);

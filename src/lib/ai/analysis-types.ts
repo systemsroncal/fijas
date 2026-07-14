@@ -156,4 +156,26 @@ export type StructuredMatchPayload = {
     notes: string[];
   };
   deepAnalysis?: boolean;
+  /** true solo si el LLM del proveedor elegido respondió de verdad */
+  llmUsed?: boolean;
+  llmProvider?: string | null;
+  /** Diagnósticos live/FT (equipo + jugadores desde TheSportsDB) */
+  matchDiagnostics?: {
+    phase: string;
+    score: string | null;
+    statusLabel: string | null;
+    venue: string | null;
+    kickoffPeru: string | null;
+    teamStats: Array<{ name: string; value: string }>;
+    players: Array<{
+      player: string;
+      team: string;
+      goals: number;
+      assists: number;
+      yellowCards: number;
+      redCards: number;
+      shotsOnTargetMin: number;
+    }>;
+    notes: string[];
+  } | null;
 };

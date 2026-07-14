@@ -278,14 +278,20 @@ export type AnalysisResult = {
 };
 
 /**
- * Construye prompt estructurado y analiza una acumulada.
- * Si falla el proveedor preferido, intenta con los siguientes disponibles.
+ * Analiza una acumulada SOLO con el proveedor elegido (sin fallback a otra IA).
  */
 export async function analyzeAccumulatorWithFallback(
   preferred: AiProvider,
   keysByProvider: Partial<Record<AiProvider, string>>,
   accumulatorSummary: string
 ): Promise<AnalysisResult> {
+  const key = keysByProvider[preferred];
+  if (!key) {
+    throw new Error(
+      `No hay API key activa para ${preferred}. Configúrala en Ajustes → API keys.`
+    );
+  }
+
   const prompt = `Eres un analista profesional de apuestas. Debes TOMARTE EL TIEMPO y analizar EN PROFUNDIDAD la acumulada.
 
 Obligatorio:
@@ -298,38 +304,21 @@ Obligatorio:
 Datos de la acumulada:
 ${accumulatorSummary}`;
 
-  const order: AiProvider[] = [
-    preferred,
-    ...Object.keys(keysByProvider).filter((p) => p !== preferred),
-  ] as AiProvider[];
-
-  let lastError: Error | null = null;
-
-  for (const provider of order) {
-    const key = keysByProvider[provider];
-    if (!key) continue;
-    try {
-      const raw = await callProvider(provider, key, [
-        {
-          role: 'system',
-          content:
-            'Analista senior. Piensa con calma y profundidad. Responde únicamente JSON válido sin markdown. Español claro. Cero invención.',
-        },
-        { role: 'user', content: prompt },
-      ]);
-      const parsed = parseAnalysisJson(raw);
-      return {
-        ...parsed,
-        rawResponse: raw,
-        providerUsed: provider,
-        promptUsed: prompt,
-      };
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-
-  throw lastError ?? new Error('No hay proveedores de IA disponibles');
+  const raw = await callProvider(preferred, key, [
+    {
+      role: 'system',
+      content:
+        'Analista senior. Piensa con calma y profundidad. Responde únicamente JSON válido sin markdown. Español claro. Cero invención.',
+    },
+    { role: 'user', content: prompt },
+  ]);
+  const parsed = parseAnalysisJson(raw);
+  return {
+    ...parsed,
+    rawResponse: raw,
+    providerUsed: preferred,
+    promptUsed: prompt,
+  };
 }
 
 function parseAnalysisJson(raw: string): {

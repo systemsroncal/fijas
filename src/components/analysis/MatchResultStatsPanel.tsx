@@ -36,10 +36,13 @@ const FOCUS_STATS = [
   /posesi[oó]n|possession/i,
   /tiros a puerta|shots on/i,
   /tiros totales|total shots/i,
+  /tiros fuera|shots off/i,
   /c[oó]rners|corner/i,
   /faltas|fouls/i,
   /amarillas|yellow/i,
   /rojas|red card/i,
+  /ataques peligros|dangerous/i,
+  /paradas|saves/i,
   /xG|goles esperados|expected goals/i,
 ];
 
