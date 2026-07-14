@@ -1,0 +1,757 @@
+{
+  "C:\\computer-files\\PERSONAL\\fijas\\.claude\\settings.json": {
+    "mtime": 1784071181.4528983,
+    "ast_hash": "17bf05b1052f0e4272245c4284e438da",
+    "semantic_hash": "17bf05b1052f0e4272245c4284e438da"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\.eslintrc.json": {
+    "mtime": 1783706694.547888,
+    "ast_hash": "934a81616adbd809dfc38314baaa3409",
+    "semantic_hash": "934a81616adbd809dfc38314baaa3409"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\__tests__\\football-model.test.ts": {
+    "mtime": 1783986655.3487785,
+    "ast_hash": "924a04319cde0cbd3e100f572c634629",
+    "semantic_hash": "924a04319cde0cbd3e100f572c634629"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\__tests__\\match-display-repair.test.ts": {
+    "mtime": 1783988707.8825655,
+    "ast_hash": "9f6bf7a1f32a2f305a0aec4469124180",
+    "semantic_hash": "9f6bf7a1f32a2f305a0aec4469124180"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\__tests__\\match-key.test.ts": {
+    "mtime": 1783721286.9764142,
+    "ast_hash": "46ffd01a554ccddebb0733f5f4d2c97d",
+    "semantic_hash": "46ffd01a554ccddebb0733f5f4d2c97d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\__tests__\\readable-picks.test.ts": {
+    "mtime": 1783989126.8080652,
+    "ast_hash": "21838a5143c5c76d4541c9ad7c350ef4",
+    "semantic_hash": "21838a5143c5c76d4541c9ad7c350ef4"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\jest.config.js": {
+    "mtime": 1783721287.1004105,
+    "ast_hash": "f5be0386898d0cb58687ffdfe56e855a",
+    "semantic_hash": "f5be0386898d0cb58687ffdfe56e855a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\next.config.js": {
+    "mtime": 1783728654.6347103,
+    "ast_hash": "6db2da76cbfcb21e2110e3ac120cdd21",
+    "semantic_hash": "6db2da76cbfcb21e2110e3ac120cdd21"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\package.json": {
+    "mtime": 1783973062.9136786,
+    "ast_hash": "9fde0cfd8af09ddb60ed7fa0ffb0f954",
+    "semantic_hash": "9fde0cfd8af09ddb60ed7fa0ffb0f954"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\prisma\\seed.ts": {
+    "mtime": 1783732469.9135845,
+    "ast_hash": "18df807650ccdbb7955b5891e6877ba4",
+    "semantic_hash": "18df807650ccdbb7955b5891e6877ba4"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\react-mui-sidebar.d.ts": {
+    "mtime": 1783706694.5898802,
+    "ast_hash": "0c48f9e8974f7d1bdda8bbb86a1eea44",
+    "semantic_hash": "0c48f9e8974f7d1bdda8bbb86a1eea44"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\main.py": {
+    "mtime": 1783721287.0054157,
+    "ast_hash": "725915ad6b12d14dc181696b459a2176",
+    "semantic_hash": "725915ad6b12d14dc181696b459a2176"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\__init__.py": {
+    "mtime": 1783721287.0054157,
+    "ast_hash": "ccda5dfa822a22914530a6d363939c95",
+    "semantic_hash": "ccda5dfa822a22914530a6d363939c95"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\base.py": {
+    "mtime": 1783721286.9424198,
+    "ast_hash": "7e07773b7b49ed9d576c37e81376383b",
+    "semantic_hash": "7e07773b7b49ed9d576c37e81376383b"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\betway.py": {
+    "mtime": 1783991537.847763,
+    "ast_hash": "0d19f6c2ba808c34f6fa246bb8a72794",
+    "semantic_hash": "0d19f6c2ba808c34f6fa246bb8a72794"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\forebet.py": {
+    "mtime": 1783991527.3554082,
+    "ast_hash": "db8616301d2a9cdc2d586b810bc88e8c",
+    "semantic_hash": "db8616301d2a9cdc2d586b810bc88e8c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\generic.py": {
+    "mtime": 1784064376.1659515,
+    "ast_hash": "8041708254f24601c47fb34991d2dd56",
+    "semantic_hash": "8041708254f24601c47fb34991d2dd56"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\meritpredict.py": {
+    "mtime": 1783721287.1084092,
+    "ast_hash": "a2d6a752ae231a15f1b151e0994f8979",
+    "semantic_hash": "a2d6a752ae231a15f1b151e0994f8979"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\nordicbet.py": {
+    "mtime": 1783721286.9524362,
+    "ast_hash": "977f37e5a7dc7709222109f012503148",
+    "semantic_hash": "977f37e5a7dc7709222109f012503148"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\oddsportal.py": {
+    "mtime": 1783991533.3635056,
+    "ast_hash": "f3d4c00d219ce1bef856c23bb284b3ed",
+    "semantic_hash": "f3d4c00d219ce1bef856c23bb284b3ed"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\predictz.py": {
+    "mtime": 1783721287.1044288,
+    "ast_hash": "16b82b30860ef4dda7b89b582bad85f3",
+    "semantic_hash": "16b82b30860ef4dda7b89b582bad85f3"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\safertip.py": {
+    "mtime": 1784063928.610425,
+    "ast_hash": "e975d4ce6960ed428c20ebd8b66432e8",
+    "semantic_hash": "e975d4ce6960ed428c20ebd8b66432e8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\scores24.py": {
+    "mtime": 1783991537.4695494,
+    "ast_hash": "d74fd7d5d5cf62ef23ce2e98b1a7545f",
+    "semantic_hash": "d74fd7d5d5cf62ef23ce2e98b1a7545f"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\soccer24.py": {
+    "mtime": 1783721287.0054157,
+    "ast_hash": "1b7e401857a030ed369de1266ed33323",
+    "semantic_hash": "1b7e401857a030ed369de1266ed33323"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\stakegains.py": {
+    "mtime": 1783721287.112415,
+    "ast_hash": "40082421ed8652717f4621bf055e8111",
+    "semantic_hash": "40082421ed8652717f4621bf055e8111"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\statarea.py": {
+    "mtime": 1783721287.1084092,
+    "ast_hash": "5092fba12660265d237c1068d9187ba3",
+    "semantic_hash": "5092fba12660265d237c1068d9187ba3"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\tips1960.py": {
+    "mtime": 1783721287.0714111,
+    "ast_hash": "98eb4ba4ddf31254ee1a3ae182e8387d",
+    "semantic_hash": "98eb4ba4ddf31254ee1a3ae182e8387d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\victorspredict.py": {
+    "mtime": 1783721286.938415,
+    "ast_hash": "fe8d3cfd503f45f7ef330fa595bf6e77",
+    "semantic_hash": "fe8d3cfd503f45f7ef330fa595bf6e77"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\sites\\windrawwin.py": {
+    "mtime": 1783721287.116449,
+    "ast_hash": "0b89ce7fd98565ee8d6083f2df1e0597",
+    "semantic_hash": "0b89ce7fd98565ee8d6083f2df1e0597"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\tests\\test_base.py": {
+    "mtime": 1783721287.0284271,
+    "ast_hash": "0a6fb8588faf125ee2594dfc0d92b4eb",
+    "semantic_hash": "0a6fb8588faf125ee2594dfc0d92b4eb"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scripts\\bootstrap-db.js": {
+    "mtime": 1783732468.8736084,
+    "ast_hash": "3e24f8763e2d3282992f56d0cc72fd35",
+    "semantic_hash": "3e24f8763e2d3282992f56d0cc72fd35"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scripts\\build-prep.js": {
+    "mtime": 1783730690.80558,
+    "ast_hash": "df5d4247b1e56d139fe8230de6112b13",
+    "semantic_hash": "df5d4247b1e56d139fe8230de6112b13"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scripts\\encode-db-password.js": {
+    "mtime": 1783732470.6975875,
+    "ast_hash": "17cff1cce2e7d07a008a58f80026ff9d",
+    "semantic_hash": "17cff1cce2e7d07a008a58f80026ff9d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\server.js": {
+    "mtime": 1783728696.635591,
+    "ast_hash": "0737ead6998992ebe9a0dc268c17da2a",
+    "semantic_hash": "0737ead6998992ebe9a0dc268c17da2a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\accumulators\\builder\\page.tsx": {
+    "mtime": 1784002092.6458192,
+    "ast_hash": "6c729dfe23aef3d1e6e0ffa76f9a4419",
+    "semantic_hash": "6c729dfe23aef3d1e6e0ffa76f9a4419"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\accumulators\\suggested\\page.tsx": {
+    "mtime": 1783968962.7696464,
+    "ast_hash": "e0164f42184c6043c97d78563c054f33",
+    "semantic_hash": "e0164f42184c6043c97d78563c054f33"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\admin\\logs\\page.tsx": {
+    "mtime": 1783728692.433589,
+    "ast_hash": "e8dec1f1f531a9b66e39f705d492eb53",
+    "semantic_hash": "e8dec1f1f531a9b66e39f705d492eb53"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\admin\\page.tsx": {
+    "mtime": 1783721286.9454217,
+    "ast_hash": "8c9ffc0f0d2f99abee01bb6d116b6c1b",
+    "semantic_hash": "8c9ffc0f0d2f99abee01bb6d116b6c1b"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\admin\\scrapers\\page.tsx": {
+    "mtime": 1783728670.8706782,
+    "ast_hash": "8ad193ab0d73e6fb99ff0bd32a820e2c",
+    "semantic_hash": "8ad193ab0d73e6fb99ff0bd32a820e2c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\admin\\sessions\\page.tsx": {
+    "mtime": 1783728670.8566763,
+    "ast_hash": "29b46a5580062f2e33143f7185f7b58c",
+    "semantic_hash": "29b46a5580062f2e33143f7185f7b58c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\admin\\users\\page.tsx": {
+    "mtime": 1783728670.806698,
+    "ast_hash": "51d7ff4f3eb8f95522746334aeaa2855",
+    "semantic_hash": "51d7ff4f3eb8f95522746334aeaa2855"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\analyses\\page.tsx": {
+    "mtime": 1784070159.713135,
+    "ast_hash": "d98d87aeb2c9fac387263a1f19daa2c9",
+    "semantic_hash": "d98d87aeb2c9fac387263a1f19daa2c9"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\container\\PageContainer.tsx": {
+    "mtime": 1783706694.5948868,
+    "ast_hash": "f822097d0bca6528fa9a86049cfdb70e",
+    "semantic_hash": "f822097d0bca6528fa9a86049cfdb70e"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\dashboard\\Blog.tsx": {
+    "mtime": 1783706694.5969124,
+    "ast_hash": "349fb90465a379f8db0c18b7f1d4e529",
+    "semantic_hash": "349fb90465a379f8db0c18b7f1d4e529"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\dashboard\\MonthlyEarnings.tsx": {
+    "mtime": 1783706694.5989764,
+    "ast_hash": "78125abdc5cc07841cb3a67242577992",
+    "semantic_hash": "78125abdc5cc07841cb3a67242577992"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\dashboard\\ProductPerformance.tsx": {
+    "mtime": 1783706694.600907,
+    "ast_hash": "7456da3b2909ca34986d3acbc7a132b4",
+    "semantic_hash": "7456da3b2909ca34986d3acbc7a132b4"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\dashboard\\RecentTransactions.tsx": {
+    "mtime": 1783706694.601882,
+    "ast_hash": "3bb682c90511c538876633bfc9b1dbdf",
+    "semantic_hash": "3bb682c90511c538876633bfc9b1dbdf"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\dashboard\\SalesOverview.tsx": {
+    "mtime": 1783706694.602885,
+    "ast_hash": "4cd66310c4db52b26fa8703cba308ba7",
+    "semantic_hash": "4cd66310c4db52b26fa8703cba308ba7"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\dashboard\\YearlyBreakup.tsx": {
+    "mtime": 1783706694.602885,
+    "ast_hash": "c70bfd15a8b532af3948669d956d6262",
+    "semantic_hash": "c70bfd15a8b532af3948669d956d6262"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\forms\\theme-elements\\CustomTextField.tsx": {
+    "mtime": 1783706694.604884,
+    "ast_hash": "a5af82881307d924ebde631196048ba1",
+    "semantic_hash": "a5af82881307d924ebde631196048ba1"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\shared\\BlankCard.tsx": {
+    "mtime": 1783706694.606881,
+    "ast_hash": "12a74d3c8388de10d66e58a8de95eeb1",
+    "semantic_hash": "12a74d3c8388de10d66e58a8de95eeb1"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\components\\shared\\DashboardCard.tsx": {
+    "mtime": 1783706694.6078904,
+    "ast_hash": "b78c11f745440459d9202dc66e2fe47f",
+    "semantic_hash": "b78c11f745440459d9202dc66e2fe47f"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\dashboard\\page.tsx": {
+    "mtime": 1784070291.9997842,
+    "ast_hash": "be6c27756029a917f463f6eba8f734b1",
+    "semantic_hash": "be6c27756029a917f463f6eba8f734b1"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\icons\\page.tsx": {
+    "mtime": 1783706694.6108816,
+    "ast_hash": "2d1f54091c230cfd810c64422da02a68",
+    "semantic_hash": "2d1f54091c230cfd810c64422da02a68"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout.tsx": {
+    "mtime": 1784059080.6014655,
+    "ast_hash": "86d9bb2faf4d665039e02a443c0974b4",
+    "semantic_hash": "86d9bb2faf4d665039e02a443c0974b4"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\header\\Header.tsx": {
+    "mtime": 1784059080.6014655,
+    "ast_hash": "cf29eb19f69a119db5b4edf3d5a8d024",
+    "semantic_hash": "cf29eb19f69a119db5b4edf3d5a8d024"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\header\\Profile.tsx": {
+    "mtime": 1783721287.1094112,
+    "ast_hash": "56f672b41c688d1a1ae7cb2a7c1be585",
+    "semantic_hash": "56f672b41c688d1a1ae7cb2a7c1be585"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\header\\data.tsx": {
+    "mtime": 1783706694.618879,
+    "ast_hash": "382d7549fdd849e7cdd7fb78fb8bca76",
+    "semantic_hash": "382d7549fdd849e7cdd7fb78fb8bca76"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\shared\\logo\\Logo.tsx": {
+    "mtime": 1784059062.219499,
+    "ast_hash": "84fd24ba74f60452cd25fbb660ba383a",
+    "semantic_hash": "84fd24ba74f60452cd25fbb660ba383a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\sidebar\\MenuItems.tsx": {
+    "mtime": 1783732361.3967924,
+    "ast_hash": "6d5665d43dbcf9018016fa4a3be48e2c",
+    "semantic_hash": "6d5665d43dbcf9018016fa4a3be48e2c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\sidebar\\Sidebar.tsx": {
+    "mtime": 1784059074.8174703,
+    "ast_hash": "66f0b18adf5c44948a2b670b50b1ed20",
+    "semantic_hash": "66f0b18adf5c44948a2b670b50b1ed20"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\layout\\sidebar\\SidebarItems.tsx": {
+    "mtime": 1784061195.2088988,
+    "ast_hash": "02b6588796d38faacd699a390810fff2",
+    "semantic_hash": "02b6588796d38faacd699a390810fff2"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\loading.tsx": {
+    "mtime": 1783706694.624886,
+    "ast_hash": "6a83ab70f3f751996ee99848c95cf7ab",
+    "semantic_hash": "6a83ab70f3f751996ee99848c95cf7ab"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\sample-page\\page.tsx": {
+    "mtime": 1783706694.6288843,
+    "ast_hash": "cd7e7d03a7e8fba97abd577462735b43",
+    "semantic_hash": "cd7e7d03a7e8fba97abd577462735b43"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\settings\\api-keys\\page.tsx": {
+    "mtime": 1783728670.7856832,
+    "ast_hash": "bb28c964b823574bb1a21cebc7a3009e",
+    "semantic_hash": "bb28c964b823574bb1a21cebc7a3009e"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\utilities\\shadow\\page.tsx": {
+    "mtime": 1783706694.6318967,
+    "ast_hash": "42a678792df30239cb9e53e91d132012",
+    "semantic_hash": "42a678792df30239cb9e53e91d132012"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\(DashboardLayout)\\utilities\\typography\\page.tsx": {
+    "mtime": 1783706694.6328816,
+    "ast_hash": "834ca62b39844a1379aef1082432cd52",
+    "semantic_hash": "834ca62b39844a1379aef1082432cd52"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\accumulators\\route.ts": {
+    "mtime": 1783988596.2216682,
+    "ast_hash": "183adc8eef9313058544d8c8c9e2781d",
+    "semantic_hash": "183adc8eef9313058544d8c8c9e2781d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\accumulators\\suggested\\route.ts": {
+    "mtime": 1783721287.0074158,
+    "ast_hash": "0ee9d59c4930eb8478416411d2c03378",
+    "semantic_hash": "0ee9d59c4930eb8478416411d2c03378"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\admin\\logs\\route.ts": {
+    "mtime": 1783721286.938415,
+    "ast_hash": "d4aa52d82557f8b31b8ed39a2cb30745",
+    "semantic_hash": "d4aa52d82557f8b31b8ed39a2cb30745"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\admin\\scrapers\\route.ts": {
+    "mtime": 1783721287.0714111,
+    "ast_hash": "ced8cd6579c6e97d6194ad0e6ec31c65",
+    "semantic_hash": "ced8cd6579c6e97d6194ad0e6ec31c65"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\admin\\sessions\\route.ts": {
+    "mtime": 1783721287.0374587,
+    "ast_hash": "3d4f5e76bfd1157e7b8a6fe5630e2604",
+    "semantic_hash": "3d4f5e76bfd1157e7b8a6fe5630e2604"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\admin\\users\\route.ts": {
+    "mtime": 1783721287.1324203,
+    "ast_hash": "b2771d9e9518185bd36f1af45e5893d6",
+    "semantic_hash": "b2771d9e9518185bd36f1af45e5893d6"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\analyses\\route.ts": {
+    "mtime": 1784070300.9188015,
+    "ast_hash": "237fe4333fd14d55ddd055b1a0e3c319",
+    "semantic_hash": "237fe4333fd14d55ddd055b1a0e3c319"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\api-keys\\route.ts": {
+    "mtime": 1783721287.0054157,
+    "ast_hash": "8099dab6dc5ea84e89297ddc3162def4",
+    "semantic_hash": "8099dab6dc5ea84e89297ddc3162def4"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\api-keys\\test\\route.ts": {
+    "mtime": 1783721287.0734096,
+    "ast_hash": "27c2b2e4350e6b19f7847005a5763773",
+    "semantic_hash": "27c2b2e4350e6b19f7847005a5763773"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\auth\\[...nextauth]\\route.ts": {
+    "mtime": 1783721287.1064122,
+    "ast_hash": "acbb1d144d75a0dd6326f279567d5a47",
+    "semantic_hash": "acbb1d144d75a0dd6326f279567d5a47"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\auth\\register\\route.ts": {
+    "mtime": 1783721287.0374587,
+    "ast_hash": "a8c796501f034cbe6cd031505d67282f",
+    "semantic_hash": "a8c796501f034cbe6cd031505d67282f"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\match-status\\route.ts": {
+    "mtime": 1784067133.549803,
+    "ast_hash": "6dc4c782061044f457a1518c1c4c015c",
+    "semantic_hash": "6dc4c782061044f457a1518c1c4c015c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\matches\\enrich-kickoffs\\route.ts": {
+    "mtime": 1784070361.9094079,
+    "ast_hash": "b8aca9b0cb69dc88c1486a031e74eb40",
+    "semantic_hash": "b8aca9b0cb69dc88c1486a031e74eb40"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\matches\\latest\\route.ts": {
+    "mtime": 1783721287.140414,
+    "ast_hash": "2f4302dfd910bd6f32d0b6877af87d7c",
+    "semantic_hash": "2f4302dfd910bd6f32d0b6877af87d7c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\matches\\route.ts": {
+    "mtime": 1784070283.7688203,
+    "ast_hash": "b1be4f93a69abffe0bf4f5bc170863b9",
+    "semantic_hash": "b1be4f93a69abffe0bf4f5bc170863b9"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\media\\proxy\\route.ts": {
+    "mtime": 1784063796.4078307,
+    "ast_hash": "ec9fe5dd2e614cde80a371cb3fb1327c",
+    "semantic_hash": "ec9fe5dd2e614cde80a371cb3fb1327c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\scraping\\ingest\\route.ts": {
+    "mtime": 1784070291.6757896,
+    "ast_hash": "8491046251fd35d14f0008ef2ffb0ba1",
+    "semantic_hash": "8491046251fd35d14f0008ef2ffb0ba1"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\api\\setup\\route.ts": {
+    "mtime": 1783730699.6019604,
+    "ast_hash": "d835257194adb4ce2a2ef7190d6f2335",
+    "semantic_hash": "d835257194adb4ce2a2ef7190d6f2335"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\authentication\\auth\\AuthLogin.tsx": {
+    "mtime": 1783706694.635885,
+    "ast_hash": "d5e9e77e1db2614eb9e10b75914b4ef3",
+    "semantic_hash": "d5e9e77e1db2614eb9e10b75914b4ef3"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\authentication\\auth\\AuthRegister.tsx": {
+    "mtime": 1783706694.636878,
+    "ast_hash": "35cf9c886350e96099d65dfb5f400f7f",
+    "semantic_hash": "35cf9c886350e96099d65dfb5f400f7f"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\authentication\\login\\page.tsx": {
+    "mtime": 1784059080.6024685,
+    "ast_hash": "55d8a3a6e6f593ca52b30f4f0ae16d7d",
+    "semantic_hash": "55d8a3a6e6f593ca52b30f4f0ae16d7d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\authentication\\register\\page.tsx": {
+    "mtime": 1783706694.6388922,
+    "ast_hash": "cb667877cf4610de8d17ad33a7cd15e3",
+    "semantic_hash": "cb667877cf4610de8d17ad33a7cd15e3"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\layout.tsx": {
+    "mtime": 1783721287.0374587,
+    "ast_hash": "3fc0f1cfe5d09cbcc04fb75269c2dfc7",
+    "semantic_hash": "3fc0f1cfe5d09cbcc04fb75269c2dfc7"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\loading.tsx": {
+    "mtime": 1783706694.6439123,
+    "ast_hash": "8d16aa6323ac7d2d66643c2b0ce3b209",
+    "semantic_hash": "8d16aa6323ac7d2d66643c2b0ce3b209"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\login\\LoginForm.tsx": {
+    "mtime": 1783721287.1064122,
+    "ast_hash": "c9565cc199c04ec49811d9ef564fecd5",
+    "semantic_hash": "c9565cc199c04ec49811d9ef564fecd5"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\login\\page.tsx": {
+    "mtime": 1783721286.9754176,
+    "ast_hash": "5ae0342f5787867836342b81bedd175a",
+    "semantic_hash": "5ae0342f5787867836342b81bedd175a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\page.tsx": {
+    "mtime": 1783721287.0684228,
+    "ast_hash": "c481168e14eb8cfdd276843f4158aeaf",
+    "semantic_hash": "c481168e14eb8cfdd276843f4158aeaf"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\app\\register\\page.tsx": {
+    "mtime": 1783728670.548686,
+    "ast_hash": "a2040db66b156356265f82ac62de00d5",
+    "semantic_hash": "a2040db66b156356265f82ac62de00d5"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\components\\AuthProvider.tsx": {
+    "mtime": 1783728708.3222406,
+    "ast_hash": "9b07b53603084cfa042bd73582441e69",
+    "semantic_hash": "9b07b53603084cfa042bd73582441e69"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\components\\LiveMatchesPoller.tsx": {
+    "mtime": 1783968889.4689856,
+    "ast_hash": "0b16230f9d2bb96486883b808643d9bb",
+    "semantic_hash": "0b16230f9d2bb96486883b808643d9bb"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\components\\analysis\\AccumulatorAnalysisCard.tsx": {
+    "mtime": 1783989056.5940604,
+    "ast_hash": "dbfd6abf2f80ea39b5a7cb9aa930f88e",
+    "semantic_hash": "dbfd6abf2f80ea39b5a7cb9aa930f88e"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\components\\analysis\\MatchAnalysisDashboard.tsx": {
+    "mtime": 1784070493.5670009,
+    "ast_hash": "f1b9fb9ec6c6304e03a02bf68cd4f349",
+    "semantic_hash": "f1b9fb9ec6c6304e03a02bf68cd4f349"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\components\\analysis\\MatchResultStatsPanel.tsx": {
+    "mtime": 1784069062.5409603,
+    "ast_hash": "77591d295a883da9a1abf46efa506d6d",
+    "semantic_hash": "77591d295a883da9a1abf46efa506d6d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\ai\\analysis-brief.ts": {
+    "mtime": 1783989055.4980693,
+    "ast_hash": "ed3606a729fffc5b85b7dfcc3a502ac8",
+    "semantic_hash": "ed3606a729fffc5b85b7dfcc3a502ac8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\ai\\analysis-types.ts": {
+    "mtime": 1784068975.5743866,
+    "ast_hash": "bc7d8905e14dd143ddac93706fe0c5a9",
+    "semantic_hash": "bc7d8905e14dd143ddac93706fe0c5a9"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\ai\\football-model.ts": {
+    "mtime": 1784057452.1253421,
+    "ast_hash": "b9b945be874761fcce8f07634e3eb66d",
+    "semantic_hash": "b9b945be874761fcce8f07634e3eb66d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\ai\\providers-client.ts": {
+    "mtime": 1784071104.8386931,
+    "ast_hash": "bbd8021962ed0daa19a05c9ee12d76e8",
+    "semantic_hash": "bbd8021962ed0daa19a05c9ee12d76e8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\ai\\providers.ts": {
+    "mtime": 1784071086.3582256,
+    "ast_hash": "a57966f0852dadc7c4a2748252c2d8f9",
+    "semantic_hash": "a57966f0852dadc7c4a2748252c2d8f9"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\ai\\structured-analysis.ts": {
+    "mtime": 1784068991.9263537,
+    "ast_hash": "4280e74f464fe3fdefb4998b83f7c0b7",
+    "semantic_hash": "4280e74f464fe3fdefb4998b83f7c0b7"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\api-guard.ts": {
+    "mtime": 1783721287.1044288,
+    "ast_hash": "1e306019c9bafccf87bbabc48bd39ea8",
+    "semantic_hash": "1e306019c9bafccf87bbabc48bd39ea8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\auth.ts": {
+    "mtime": 1783721287.1174433,
+    "ast_hash": "6d5ecb73e0c59b3f5cce28d35521a22e",
+    "semantic_hash": "6d5ecb73e0c59b3f5cce28d35521a22e"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\encryption.ts": {
+    "mtime": 1783721286.9454217,
+    "ast_hash": "0e4078804479de726f925d7244f28a0a",
+    "semantic_hash": "0e4078804479de726f925d7244f28a0a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\export-png.ts": {
+    "mtime": 1784070527.1160035,
+    "ast_hash": "eb1af3e0ce3c15e197a05aac9d6ef40b",
+    "semantic_hash": "eb1af3e0ce3c15e197a05aac9d6ef40b"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\local-date.ts": {
+    "mtime": 1784062062.3327096,
+    "ast_hash": "2001b16bee51df2c63ea5e09a69ea502",
+    "semantic_hash": "2001b16bee51df2c63ea5e09a69ea502"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\match-display.ts": {
+    "mtime": 1784062071.0712337,
+    "ast_hash": "81386c64b095033e83a9d05c2efc4f3b",
+    "semantic_hash": "81386c64b095033e83a9d05c2efc4f3b"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\match-key.ts": {
+    "mtime": 1783721287.1004105,
+    "ast_hash": "2afea083ccba21387951f0efbc1f7cb8",
+    "semantic_hash": "2afea083ccba21387951f0efbc1f7cb8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\media-proxy.ts": {
+    "mtime": 1784058860.8307264,
+    "ast_hash": "7422b25f3836d735a704ac0a2040f1a8",
+    "semantic_hash": "7422b25f3836d735a704ac0a2040f1a8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\paths.ts": {
+    "mtime": 1783728654.4426756,
+    "ast_hash": "2f8ada127b9da7d23b28c782a828026c",
+    "semantic_hash": "2f8ada127b9da7d23b28c782a828026c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\prisma.ts": {
+    "mtime": 1783728696.5375817,
+    "ast_hash": "331f50d14a82f13552a3d29599191a6d",
+    "semantic_hash": "331f50d14a82f13552a3d29599191a6d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\rate-limit.ts": {
+    "mtime": 1783721287.1174433,
+    "ast_hash": "3982e5c1c317aa5776d0bca9a3abed81",
+    "semantic_hash": "3982e5c1c317aa5776d0bca9a3abed81"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\session-control.ts": {
+    "mtime": 1783721287.0374587,
+    "ast_hash": "283e2b1e22c30f33cc335ab60c906961",
+    "semantic_hash": "283e2b1e22c30f33cc335ab60c906961"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\sportsdb\\client.ts": {
+    "mtime": 1784070101.0301025,
+    "ast_hash": "b154347bbb29d9e953e1488ac488aa96",
+    "semantic_hash": "b154347bbb29d9e953e1488ac488aa96"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\sportsdb\\enrich.ts": {
+    "mtime": 1784053512.3909588,
+    "ast_hash": "6722ce17dbc5e368ef5df23c25c2870c",
+    "semantic_hash": "6722ce17dbc5e368ef5df23c25c2870c"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\sportsdb\\kickoff.ts": {
+    "mtime": 1784064599.158113,
+    "ast_hash": "3c86cf1e6d11c65498aa4edfdfb48fbc",
+    "semantic_hash": "3c86cf1e6d11c65498aa4edfdfb48fbc"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\sportsdb\\labels-es.ts": {
+    "mtime": 1784057428.3776486,
+    "ast_hash": "086df94c594c040f67f6b49cf70e14a1",
+    "semantic_hash": "086df94c594c040f67f6b49cf70e14a1"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\sportsdb\\match-status.ts": {
+    "mtime": 1784070127.7121015,
+    "ast_hash": "7f0e812070a47efea6b65731fe54ca30",
+    "semantic_hash": "7f0e812070a47efea6b65731fe54ca30"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\sportsdb\\player-diagnostics.ts": {
+    "mtime": 1784068974.1195514,
+    "ast_hash": "a85be6220140e7dd3e4930e7ccdc6264",
+    "semantic_hash": "a85be6220140e7dd3e4930e7ccdc6264"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\lib\\timezone.ts": {
+    "mtime": 1784067122.3525534,
+    "ast_hash": "e5656839b5cabcc424ae20729bae15ed",
+    "semantic_hash": "e5656839b5cabcc424ae20729bae15ed"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\middleware.ts": {
+    "mtime": 1783721287.0714111,
+    "ast_hash": "0df1fb559a207b511033d2eae11ea42d",
+    "semantic_hash": "0df1fb559a207b511033d2eae11ea42d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\types\\assets.d.ts": {
+    "mtime": 1783730926.7974591,
+    "ast_hash": "94b35bbe41baced0028801a622d93cfd",
+    "semantic_hash": "94b35bbe41baced0028801a622d93cfd"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\types\\next-auth.d.ts": {
+    "mtime": 1783721287.1064122,
+    "ast_hash": "d4328a05d4ad83df4691ce2bc3b04145",
+    "semantic_hash": "d4328a05d4ad83df4691ce2bc3b04145"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\utils\\createEmotionCache.ts": {
+    "mtime": 1783706694.6460278,
+    "ast_hash": "7d2685af3bb898813973bc1af0203d09",
+    "semantic_hash": "7d2685af3bb898813973bc1af0203d09"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\utils\\theme.ts": {
+    "mtime": 1783706694.6478906,
+    "ast_hash": "d9ebdcbaa8741af1779db2b58519eb61",
+    "semantic_hash": "d9ebdcbaa8741af1779db2b58519eb61"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\src\\utils\\theme\\DefaultColors.tsx": {
+    "mtime": 1783706694.6488774,
+    "ast_hash": "cfafd95bf0a454b65334d48e59358d98",
+    "semantic_hash": "cfafd95bf0a454b65334d48e59358d98"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\tsconfig.json": {
+    "mtime": 1783706694.6498744,
+    "ast_hash": "133593d6696d09df1cb7f81df6d494ff",
+    "semantic_hash": "133593d6696d09df1cb7f81df6d494ff"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\vercel.json": {
+    "mtime": 1783730698.7499218,
+    "ast_hash": "80a6c807a461c7b4d0e725e807a255df",
+    "semantic_hash": "80a6c807a461c7b4d0e725e807a255df"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\.github\\workflows\\scraping.yml": {
+    "mtime": 1783968030.8179047,
+    "ast_hash": "ffec2a8a6b7ffbfb6820984f7d4d86a8",
+    "semantic_hash": "ffec2a8a6b7ffbfb6820984f7d4d86a8"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\CLAUDE.md": {
+    "mtime": 1784071181.4289005,
+    "ast_hash": "8a6643a420fdad6bfb583523bc6cef16",
+    "semantic_hash": "8a6643a420fdad6bfb583523bc6cef16"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\README.md": {
+    "mtime": 1783732470.2385838,
+    "ast_hash": "7263abd5f27908fb2f20fdbbb7fecc41",
+    "semantic_hash": "7263abd5f27908fb2f20fdbbb7fecc41"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\docs\\superpowers\\specs\\2026-07-10-wps-admin-dashboard-design.md": {
+    "mtime": 1783721286.9764142,
+    "ast_hash": "13b0c220b3ec130f32d6b5e8734badc3",
+    "semantic_hash": "13b0c220b3ec130f32d6b5e8734badc3"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\docs\\superpowers\\specs\\2026-07-13-ai-match-analysis-design.md": {
+    "mtime": 1783973130.883513,
+    "ast_hash": "e23ec9ae47a4db9e939e3a29d6136d82",
+    "semantic_hash": "e23ec9ae47a4db9e939e3a29d6136d82"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\scrapers\\requirements.txt": {
+    "mtime": 1783721286.9764142,
+    "ast_hash": "ca44f097e4fe74b0eba3d8e87f22d4cb",
+    "semantic_hash": "ca44f097e4fe74b0eba3d8e87f22d4cb"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\backgrounds\\404-error-idea.gif": {
+    "mtime": 1783706694.5648973,
+    "ast_hash": "48c8e176a4fbf04b2514fa39637361c0",
+    "semantic_hash": "48c8e176a4fbf04b2514fa39637361c0"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\backgrounds\\login-bg.svg": {
+    "mtime": 1783706694.56888,
+    "ast_hash": "d6009de031434de2da5a682bdb1253cc",
+    "semantic_hash": "d6009de031434de2da5a682bdb1253cc"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\backgrounds\\rocket.png": {
+    "mtime": 1783706694.569879,
+    "ast_hash": "a581717c652d327479f560c54802c92d",
+    "semantic_hash": "a581717c652d327479f560c54802c92d"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\logos\\dark-logo.svg": {
+    "mtime": 1783706694.57188,
+    "ast_hash": "98581fe72985ece97b2ef8364adf950a",
+    "semantic_hash": "98581fe72985ece97b2ef8364adf950a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\products\\empty-shopping-bag.gif": {
+    "mtime": 1783706694.5738802,
+    "ast_hash": "062b4d6da90df86027348f0a55e3c2f7",
+    "semantic_hash": "062b4d6da90df86027348f0a55e3c2f7"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\products\\s11.jpg": {
+    "mtime": 1783706694.5778904,
+    "ast_hash": "e6c41377328752529fb81a65e11c656a",
+    "semantic_hash": "e6c41377328752529fb81a65e11c656a"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\products\\s4.jpg": {
+    "mtime": 1783706694.5798814,
+    "ast_hash": "8de2917ccfa420e2b574e0453e577cf4",
+    "semantic_hash": "8de2917ccfa420e2b574e0453e577cf4"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\products\\s5.jpg": {
+    "mtime": 1783706694.5828755,
+    "ast_hash": "feb074e0b9ece70d56729904340c1586",
+    "semantic_hash": "feb074e0b9ece70d56729904340c1586"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\products\\s7.jpg": {
+    "mtime": 1783706694.584878,
+    "ast_hash": "7691a30400afaf4327fc4ff1d7d7dcd7",
+    "semantic_hash": "7691a30400afaf4327fc4ff1d7d7dcd7"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\images\\profile\\user-1.jpg": {
+    "mtime": 1783706694.586878,
+    "ast_hash": "aeb04882fb243475575375fc40c31742",
+    "semantic_hash": "aeb04882fb243475575375fc40c31742"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\next.svg": {
+    "mtime": 1783706694.587878,
+    "ast_hash": "8e061864f388b47f33a1c3780831193e",
+    "semantic_hash": "8e061864f388b47f33a1c3780831193e"
+  },
+  "C:\\computer-files\\PERSONAL\\fijas\\public\\vercel.svg": {
+    "mtime": 1783706694.5888803,
+    "ast_hash": "61c6b19abff40ea7acd577be818f3976",
+    "semantic_hash": "61c6b19abff40ea7acd577be818f3976"
+  }
+}

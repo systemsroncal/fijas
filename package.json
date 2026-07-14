@@ -12,7 +12,9 @@
     "db:push": "prisma db push",
     "db:bootstrap": "node scripts/bootstrap-db.js",
     "db:seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "graphify:hook": "graphify hook install",
+    "graphify:status": "graphify hook status"
   },
   "engines": {
     "node": "20.x || 22.x"
