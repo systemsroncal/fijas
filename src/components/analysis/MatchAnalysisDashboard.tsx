@@ -87,6 +87,14 @@ function TeamBadge({
         src={src}
         alt={name}
         sx={{ width: 36, height: 36, fontSize: 13, bgcolor: 'primary.main', fontWeight: 700 }}
+        slotProps={{
+          img: {
+            // Escudo sigue en UI; si falla la URL, muestra monograma sin romper export
+            onError: (e) => {
+              e.currentTarget.removeAttribute('src');
+            },
+          },
+        }}
       >
         {teamMonogram(name)}
       </Avatar>
@@ -457,6 +465,13 @@ export default function MatchAnalysisDashboard({
                         <Avatar
                           src={proxiedMediaUrl(b.badge)}
                           sx={{ width: 28, height: 28, fontSize: 11 }}
+                          slotProps={{
+                            img: {
+                              onError: (e) => {
+                                e.currentTarget.removeAttribute('src');
+                              },
+                            },
+                          }}
                         >
                           {(b.name ?? String(side)).slice(0, 2)}
                         </Avatar>

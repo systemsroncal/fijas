@@ -1,5 +1,6 @@
 /**
- * Export PNG robusto: incrusta escudos como data URL (mantiene crestas en UI).
+ * Export PNG: clona el nodo fuera de pantalla, incrusta escudos como data URL
+ * y rasteriza charts. La UI en vivo no se toca (escudos siguen visibles).
  */
 
 import { apiUrl } from '@/lib/paths';
@@ -7,6 +8,10 @@ import { isAllowedMediaHost } from '@/lib/media-proxy';
 
 const TRANSPARENT_GIF =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+function wait(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
 
 function waitFrames(n = 2) {
   return new Promise<void>((resolve) => {
@@ -24,7 +29,6 @@ function waitFrames(n = 2) {
 function toFetchUrl(src: string): string {
   if (src.startsWith('data:') || src.startsWith('blob:')) return src;
   if (src.includes('/api/media/proxy')) {
-    // Absolute same-origin for fetch
     if (src.startsWith('http')) return src;
     if (typeof window !== 'undefined') {
       return new URL(src, window.location.origin).href;
@@ -37,7 +41,10 @@ function toFetchUrl(src: string): string {
       typeof window !== 'undefined' ? window.location.href : 'http://local'
     );
     if (isAllowedMediaHost(abs.href)) {
-      return apiUrl(`/api/media/proxy?url=${encodeURIComponent(abs.href)}`);
+      const path = apiUrl(`/api/media/proxy?url=${encodeURIComponent(abs.href)}`);
+      return typeof window !== 'undefined'
+        ? new URL(path, window.location.origin).href
+        : path;
     }
     if (typeof window !== 'undefined' && abs.origin === window.location.origin) {
       return abs.href;
@@ -58,100 +65,220 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 async function srcToDataUrl(src: string): Promise<string> {
+  if (!src || src === TRANSPARENT_GIF) return TRANSPARENT_GIF;
   if (src.startsWith('data:')) return src;
   const url = toFetchUrl(src);
-  const res = await fetch(url, { cache: 'force-cache', credentials: 'same-origin' });
+  const res = await fetch(url, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    mode: 'cors',
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
   if (blob.size === 0) throw new Error('empty image');
-  return blobToDataUrl(blob);
+  // Forzar tipo imagen si el proxy mandó octet-stream
+  const typed =
+    blob.type.startsWith('image/') || blob.type === ''
+      ? blob
+      : new Blob([blob], { type: 'image/png' });
+  return blobToDataUrl(typed);
 }
 
-type ImgBackup = {
-  el: HTMLImageElement | SVGImageElement;
-  attr: 'src' | 'href' | 'xlink';
-  value: string | null;
-  srcset?: string | null;
-};
+async function safeImgDataUrl(src: string): Promise<string> {
+  try {
+    return await srcToDataUrl(src);
+  } catch {
+    return TRANSPARENT_GIF;
+  }
+}
 
-/**
- * Reemplaza temporalmente <img> y <image> por data URLs same-origin.
- */
-export async function inlineImagesForExport(root: HTMLElement): Promise<() => void> {
-  const htmlImgs = Array.from(root.querySelectorAll('img'));
-  const svgImgs = Array.from(root.querySelectorAll('image'));
-  const backups: ImgBackup[] = [];
-
-  await Promise.all([
-    ...htmlImgs.map(async (img) => {
-      const src = img.currentSrc || img.getAttribute('src') || '';
-      backups.push({
-        el: img,
-        attr: 'src',
-        value: img.getAttribute('src'),
-        srcset: img.getAttribute('srcset'),
-      });
-      if (!src) return;
-      try {
-        const dataUrl = await srcToDataUrl(src);
-        img.removeAttribute('srcset');
-        img.setAttribute('src', dataUrl);
-        img.crossOrigin = 'anonymous';
-        if (typeof img.decode === 'function') {
-          await img.decode().catch(() => undefined);
-        }
-      } catch {
-        img.removeAttribute('srcset');
-        img.setAttribute('src', TRANSPARENT_GIF);
-      }
-    }),
-    ...svgImgs.map(async (img) => {
-      const href =
-        img.getAttribute('href') ||
-        img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
-        '';
-      backups.push({
-        el: img,
-        attr: img.hasAttribute('href') ? 'href' : 'xlink',
-        value: href || null,
-      });
-      if (!href || href.startsWith('data:')) return;
-      try {
-        const dataUrl = await srcToDataUrl(href);
-        img.setAttribute('href', dataUrl);
-        img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
-      } catch {
-        img.setAttribute('href', TRANSPARENT_GIF);
-        img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', TRANSPARENT_GIF);
-      }
-    }),
-  ]);
-
-  return () => {
-    for (const b of backups) {
-      if (b.el instanceof HTMLImageElement) {
-        if (b.value != null) b.el.setAttribute('src', b.value);
-        else b.el.removeAttribute('src');
-        if (b.srcset != null) b.el.setAttribute('srcset', b.srcset);
-        else b.el.removeAttribute('srcset');
-      } else {
-        if (b.attr === 'xlink') {
-          if (b.value != null) {
-            b.el.setAttributeNS('http://www.w3.org/1999/xlink', 'href', b.value);
-          }
-        } else if (b.value != null) {
-          b.el.setAttribute('href', b.value);
-        }
-      }
+/** Rasteriza <canvas> del nodo vivo (ApexCharts a veces usa canvas). */
+function snapshotCanvases(root: HTMLElement): string[] {
+  return Array.from(root.querySelectorAll('canvas')).map((c) => {
+    try {
+      return c.toDataURL('image/png');
+    } catch {
+      return TRANSPARENT_GIF;
     }
-  };
+  });
+}
+
+/** Serializa SVG de charts a data URL PNG vía canvas. */
+async function svgElementToPngDataUrl(svg: SVGElement): Promise<string> {
+  const clone = svg.cloneNode(true) as SVGElement;
+  if (!clone.getAttribute('xmlns')) {
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  }
+  const rect = svg.getBoundingClientRect();
+  const w = Math.max(1, Math.ceil(rect.width || Number(svg.getAttribute('width')) || 320));
+  const h = Math.max(1, Math.ceil(rect.height || Number(svg.getAttribute('height')) || 240));
+  clone.setAttribute('width', String(w));
+  clone.setAttribute('height', String(h));
+
+  // Quitar imágenes externas del SVG (evitan tainted / error)
+  clone.querySelectorAll('image').forEach((img) => {
+    const href =
+      img.getAttribute('href') ||
+      img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+      '';
+    if (href && !href.startsWith('data:')) {
+      img.setAttribute('href', TRANSPARENT_GIF);
+      img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', TRANSPARENT_GIF);
+    }
+  });
+
+  const xml = new XMLSerializer().serializeToString(clone);
+  const svgUrl =
+    'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = w * 2;
+        canvas.height = h * 2;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(TRANSPARENT_GIF);
+          return;
+        }
+        ctx.scale(2, 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(image, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(TRANSPARENT_GIF);
+      }
+    };
+    image.onerror = () => resolve(TRANSPARENT_GIF);
+    image.src = svgUrl;
+  });
+}
+
+async function prepareClone(root: HTMLElement): Promise<HTMLElement> {
+  const width = Math.max(root.scrollWidth, root.offsetWidth, 320);
+  const canvasSnaps = snapshotCanvases(root);
+
+  // Rasterizar SVG de ApexCharts en el nodo vivo (solo lectura → data URLs)
+  const chartSvgs = Array.from(
+    root.querySelectorAll('.apexcharts-svg, .apexcharts-canvas > svg, svg.apexcharts-svg')
+  ) as SVGElement[];
+  const chartSnaps = await Promise.all(chartSvgs.map((svg) => svgElementToPngDataUrl(svg)));
+
+  const clone = root.cloneNode(true) as HTMLElement;
+
+  const host = document.createElement('div');
+  host.setAttribute('data-export-host', '1');
+  host.style.cssText = [
+    'position:fixed',
+    'left:-14000px',
+    'top:0',
+    `width:${width}px`,
+    'background:#ffffff',
+    'z-index:-1',
+    'pointer-events:none',
+    'opacity:1',
+  ].join(';');
+  host.appendChild(clone);
+  document.body.appendChild(host);
+
+  // Sustituir canvases del clone por <img>
+  const cloneCanvases = Array.from(clone.querySelectorAll('canvas'));
+  cloneCanvases.forEach((c, i) => {
+    const dataUrl = canvasSnaps[i] ?? TRANSPARENT_GIF;
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = '';
+    img.style.width = `${c.width || c.clientWidth || 100}px`;
+    img.style.height = `${c.height || c.clientHeight || 100}px`;
+    img.style.display = 'block';
+    c.replaceWith(img);
+  });
+
+  // Sustituir SVG de charts por <img> rasterizado
+  const cloneChartSvgs = Array.from(
+    clone.querySelectorAll('.apexcharts-svg, .apexcharts-canvas > svg, svg.apexcharts-svg')
+  );
+  cloneChartSvgs.forEach((svg, i) => {
+    const dataUrl = chartSnaps[i] ?? TRANSPARENT_GIF;
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = 'chart';
+    img.style.width = '100%';
+    img.style.height = 'auto';
+    img.style.display = 'block';
+    const parent = svg.parentElement;
+    if (parent) parent.replaceChild(img, svg);
+    else svg.replaceWith(img);
+  });
+
+  // Incrustar escudos / imgs HTTP como data URL (los charts ya son data:)
+  await Promise.all(
+    Array.from(clone.querySelectorAll('img')).map(async (img) => {
+      const src = img.getAttribute('src') || '';
+      if (!src || src.startsWith('data:')) return;
+      img.removeAttribute('srcset');
+      img.removeAttribute('crossorigin');
+      img.referrerPolicy = 'no-referrer';
+      img.setAttribute('src', await safeImgDataUrl(src));
+    })
+  );
+
+  // SVG <image> residuales
+  for (const image of Array.from(clone.querySelectorAll('image'))) {
+    const href =
+      image.getAttribute('href') ||
+      image.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+      '';
+    if (!href || href.startsWith('data:')) continue;
+    const dataUrl = await safeImgDataUrl(href);
+    image.setAttribute('href', dataUrl);
+    image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+  }
+
+  await waitFrames(3);
+  await wait(50);
+  return host;
+}
+
+function stripModernColorFunctions(root: HTMLElement) {
+  // html-to-image falla con oklch/lab/color-mix en algunos navegadores
+  const all = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))];
+  for (const el of all) {
+    const style = el.getAttribute('style');
+    if (!style) continue;
+    if (/oklch|oklab|lab\(|lch\(|color-mix/i.test(style)) {
+      el.setAttribute(
+        'style',
+        style
+          .replace(/oklch\([^)]+\)/gi, '#222222')
+          .replace(/oklab\([^)]+\)/gi, '#222222')
+          .replace(/lab\([^)]+\)/gi, '#222222')
+          .replace(/lch\([^)]+\)/gi, '#222222')
+          .replace(/color-mix\([^)]+\)/gi, '#666666')
+      );
+    }
+  }
 }
 
 export async function exportNodeToPng(root: HTMLElement): Promise<string> {
-  const restore = await inlineImagesForExport(root);
-  await waitFrames(3);
+  const host = await prepareClone(root);
+  const clone = host.firstElementChild as HTMLElement;
+
+  // Silenciar errores de img globales durante la captura
+  const swallow = (e: Event) => {
+    if (e.target instanceof HTMLImageElement) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  };
+  window.addEventListener('error', swallow, true);
+
   try {
-    const { toPng } = await import('html-to-image');
+    stripModernColorFunctions(clone);
+    const { toPng, toCanvas } = await import('html-to-image');
     const opts = {
       cacheBust: false,
       pixelRatio: 2,
@@ -159,28 +286,24 @@ export async function exportNodeToPng(root: HTMLElement): Promise<string> {
       skipFonts: true,
       preferredFontFormat: 'woff2' as const,
       imagePlaceholder: TRANSPARENT_GIF,
+      includeQueryParams: true,
       filter: (node: HTMLElement | Node) => {
-        if (node instanceof HTMLElement && node.dataset.exportIgnore === '1') return false;
+        if (!(node instanceof HTMLElement)) return true;
+        if (node.dataset.exportIgnore === '1') return false;
+        if (node.tagName === 'SCRIPT') return false;
         return true;
       },
     };
+
     try {
-      return await toPng(root, opts);
-    } catch (first) {
-      // Segundo intento: forzar placeholder en cualquier img residual
-      const imgs = root.querySelectorAll('img');
-      imgs.forEach((img) => {
-        const s = img.getAttribute('src') || '';
-        if (!s.startsWith('data:')) img.setAttribute('src', TRANSPARENT_GIF);
-      });
-      await waitFrames(2);
-      try {
-        return await toPng(root, opts);
-      } catch {
-        throw first;
-      }
+      return await toPng(clone, opts);
+    } catch {
+      // Fallback: canvas → data URL
+      const canvas = await toCanvas(clone, opts);
+      return canvas.toDataURL('image/png');
     }
   } finally {
-    restore();
+    window.removeEventListener('error', swallow, true);
+    host.remove();
   }
 }
