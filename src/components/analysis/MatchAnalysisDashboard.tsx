@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Avatar,
@@ -17,6 +18,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   IconBallAmericanFootball,
   IconBallBasketball,
@@ -29,6 +31,8 @@ import {
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { withBrief } from '@/lib/ai/analysis-brief';
 import { sportLabel, teamMonogram, type SportKind } from '@/lib/match-display';
+
+const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
 const verdictColor: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
   value: 'success',
@@ -94,8 +98,53 @@ export default function MatchAnalysisDashboard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const theme = useTheme();
+  const valid = Boolean(
+    payload?.probs && Array.isArray(payload.markets) && payload.scoreline
+  );
 
-  if (!payload?.probs || !Array.isArray(payload.markets) || !payload.scoreline) {
+  const m = valid ? payload.match : undefined;
+  const brief = valid ? payload.brief ?? withBrief(payload).brief : undefined;
+  const homeLabel = `${m?.homeTeam ?? 'Local'} GANA`;
+  const awayLabel = `${m?.awayTeam ?? 'Visitante'} GANA`;
+  const edgeMarkets = valid ? payload.markets.slice(0, 8) : [];
+
+  const donutOptions = useMemo(
+    () => ({
+      chart: { type: 'donut' as const, fontFamily: 'inherit', toolbar: { show: false } },
+      labels: [homeLabel, 'EMPATE', awayLabel],
+      colors: [theme.palette.primary.main, theme.palette.warning.main, theme.palette.success.main],
+      legend: { position: 'bottom' as const },
+      dataLabels: { enabled: true, formatter: (v: number) => `${Math.round(v)}%` },
+      plotOptions: { pie: { donut: { size: '62%' } } },
+      tooltip: { y: { formatter: (v: number) => `${v.toFixed(1)}%` } },
+    }),
+    [homeLabel, awayLabel, theme]
+  );
+  const donutSeries = valid
+    ? [payload.probs.home, payload.probs.draw, payload.probs.away]
+    : [0, 0, 0];
+
+  const barOptions = useMemo(
+    () => ({
+      chart: { type: 'bar' as const, fontFamily: 'inherit', toolbar: { show: false } },
+      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '70%' } },
+      xaxis: {
+        categories: edgeMarkets.map((r) =>
+          r.market.length > 42 ? `${r.market.slice(0, 40)}…` : r.market
+        ),
+      },
+      colors: [theme.palette.info.main],
+      dataLabels: { enabled: true, formatter: (v: number) => `${Number(v).toFixed(0)}%` },
+      tooltip: { y: { formatter: (v: number) => `Prob ${Number(v).toFixed(1)}%` } },
+    }),
+    [edgeMarkets, theme]
+  );
+  const barSeries = [
+    { name: 'Prob. modelo', data: edgeMarkets.map((r) => Math.round(r.aiProb * 10) / 10) },
+  ];
+
+  if (!valid) {
     return (
       <Alert severity="warning" variant="outlined">
         Este resultado no es un análisis de partido completo. Usa «Por partido» o «Aleatorio /
@@ -103,9 +152,6 @@ export default function MatchAnalysisDashboard({
       </Alert>
     );
   }
-
-  const m = payload.match;
-  const brief = payload.brief ?? withBrief(payload).brief;
 
   const exportPng = async () => {
     if (!ref.current) return;
@@ -197,9 +243,15 @@ export default function MatchAnalysisDashboard({
               {payload.mode === 'RANDOM' && (
                 <Chip size="small" label="Partido elegido al azar" sx={{ mt: 1.5 }} color="info" />
               )}
-              {m?.tip && (
-                <Chip size="small" label={`Tip scrapeado: ${m.tip}`} sx={{ mt: 1.5 }} color="primary" />
-              )}
+              {m?.tip &&
+                !/^(view\s*tips?|n\/?a|tbd|-)$/i.test(m.tip.trim()) && (
+                  <Chip
+                    size="small"
+                    label={`Tip scrapeado: ${m.tip}`}
+                    sx={{ mt: 1.5 }}
+                    color="primary"
+                  />
+                )}
             </Box>
             <Box
               sx={{
@@ -229,36 +281,52 @@ export default function MatchAnalysisDashboard({
             <Typography fontWeight={700} gutterBottom>
               Probabilidades (modelo Poisson)
             </Typography>
-            <Stack spacing={1}>
-              {(
-                [
-                  [`${m?.homeTeam ?? 'Local'} GANA`, payload.probs.home],
-                  ['EMPATE', payload.probs.draw],
-                  [`${m?.awayTeam ?? 'Visitante'} GANA`, payload.probs.away],
-                ] as const
-              ).map(([label, v]) => (
-                <Box key={label}>
-                  <Stack direction="row" justifyContent="space-between">
-                    <Typography variant="body2">{label}</Typography>
-                    <Typography variant="body2" fontWeight={700}>
-                      {v}%
-                    </Typography>
-                  </Stack>
-                  <LinearProgress
-                    variant="determinate"
-                    value={Math.min(100, v)}
-                    sx={{ height: 7, borderRadius: 1 }}
-                  />
-                </Box>
-              ))}
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="stretch">
+              <Box sx={{ flex: 1, minHeight: 260 }}>
+                <Chart options={donutOptions} series={donutSeries} type="donut" height={260} width="100%" />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Stack spacing={1}>
+                  {(
+                    [
+                      [homeLabel, payload.probs.home],
+                      ['EMPATE', payload.probs.draw],
+                      [awayLabel, payload.probs.away],
+                    ] as const
+                  ).map(([label, v]) => (
+                    <Box key={label}>
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography variant="body2">{label}</Typography>
+                        <Typography variant="body2" fontWeight={700}>
+                          {v}%
+                        </Typography>
+                      </Stack>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.min(100, v)}
+                        sx={{ height: 7, borderRadius: 1 }}
+                      />
+                    </Box>
+                  ))}
+                </Stack>
+                <Typography mt={1.5} variant="body2" color="text.secondary">
+                  Marcador modelo más probable: <strong>{payload.scoreline.mostLikely}</strong>
+                  {payload.scoreline.alternatives.length > 0 &&
+                    ` · Alt: ${payload.scoreline.alternatives.join(', ')}`}
+                  <Chip size="small" label="modelo" sx={{ ml: 1 }} />
+                </Typography>
+              </Box>
             </Stack>
-            <Typography mt={1.5} variant="body2" color="text.secondary">
-              Marcador modelo más probable: <strong>{payload.scoreline.mostLikely}</strong>
-              {payload.scoreline.alternatives.length > 0 &&
-                ` · Alt: ${payload.scoreline.alternatives.join(', ')}`}
-              <Chip size="small" label="modelo" sx={{ ml: 1 }} />
-            </Typography>
           </Box>
+
+          {edgeMarkets.length > 0 && (
+            <Box>
+              <Typography fontWeight={700} gutterBottom>
+                Gráfica de mercados (probabilidad modelo)
+              </Typography>
+              <Chart options={barOptions} series={barSeries} type="bar" height={280} width="100%" />
+            </Box>
+          )}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
             {[
@@ -294,9 +362,90 @@ export default function MatchAnalysisDashboard({
             {payload.expected.note}
           </Typography>
 
+          {payload.sportsDb && (
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+                <Typography fontWeight={700}>TheSportsDB (análisis profundo)</Typography>
+                <Chip size="small" label="API free" variant="outlined" />
+                {payload.deepAnalysis && <Chip size="small" color="info" label="deep" />}
+              </Stack>
+              {payload.sportsDb.matchedEvent?.label ? (
+                <Typography variant="body2" mb={1}>
+                  Evento: <strong>{payload.sportsDb.matchedEvent.label}</strong>
+                  {payload.sportsDb.matchedEvent.league
+                    ? ` · ${payload.sportsDb.matchedEvent.league}`
+                    : ''}
+                  {payload.sportsDb.matchedEvent.date
+                    ? ` · ${payload.sportsDb.matchedEvent.date}`
+                    : ''}
+                </Typography>
+              ) : (
+                <Alert severity="info" variant="outlined" sx={{ mb: 1 }}>
+                  Sin match exacto en TheSportsDB; el análisis sigue con scraping + modelo.
+                </Alert>
+              )}
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} mb={1}>
+                {[
+                  ['Local', payload.sportsDb.home],
+                  ['Visitante', payload.sportsDb.away],
+                ].map(([side, block]) => {
+                  const b = block as NonNullable<typeof payload.sportsDb>['home'];
+                  return (
+                    <Box
+                      key={String(side)}
+                      sx={{
+                        flex: 1,
+                        p: 1.5,
+                        borderRadius: 1.5,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        bgcolor: 'grey.50',
+                      }}
+                    >
+                      <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
+                        <Avatar
+                          src={b.badge || undefined}
+                          sx={{ width: 28, height: 28, fontSize: 11 }}
+                        >
+                          {(b.name ?? String(side)).slice(0, 2)}
+                        </Avatar>
+                        <Typography fontWeight={700} variant="body2">
+                          {b.name ?? String(side)}
+                        </Typography>
+                      </Stack>
+                      {b.recent.length > 0 ? (
+                        <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                          {b.recent.slice(0, 5).map((r, i) => (
+                            <Chip
+                              key={`${r.label}-${i}`}
+                              size="small"
+                              variant="outlined"
+                              label={r.score ? `${r.score}` : '—'}
+                              title={r.label}
+                            />
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          Sin últimos resultados API
+                        </Typography>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Stack>
+              {payload.sportsDb.notes.length > 0 && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {payload.sportsDb.notes.slice(0, 4).join(' · ')}
+                  {` · ~${payload.sportsDb.usedRequestsEstimate} req API`}
+                </Typography>
+              )}
+            </Box>
+          )}
+
           <Box>
             <Typography fontWeight={700} gutterBottom>
-              Últimos partidos (solo scrapados)
+              Últimos partidos (scrape + TheSportsDB)
             </Typography>
             {payload.form?.available && payload.form.recentScores.length > 0 ? (
               <Stack spacing={1}>

@@ -119,4 +119,30 @@ export type StructuredMatchPayload = {
   brief?: AnalysisBrief;
   disclaimer: string;
   model?: unknown;
+  /** Contexto TheSportsDB (solo en análisis, no en scrapers) */
+  sportsDb?: {
+    source: 'thesportsdb';
+    usedRequestsEstimate: number;
+    matchedEvent: {
+      id?: string;
+      label?: string;
+      league?: string;
+      date?: string;
+      score?: string | null;
+    } | null;
+    home: {
+      id?: string;
+      name?: string;
+      badge?: string | null;
+      recent: Array<{ label: string; score: string | null; date?: string }>;
+    };
+    away: {
+      id?: string;
+      name?: string;
+      badge?: string | null;
+      recent: Array<{ label: string; score: string | null; date?: string }>;
+    };
+    notes: string[];
+  };
+  deepAnalysis?: boolean;
 };

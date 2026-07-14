@@ -17,6 +17,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Chip,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import { AI_PROVIDERS } from '@/lib/ai/providers-client';
@@ -61,6 +63,7 @@ type Analysis = {
 };
 
 type Mode = 'MATCH' | 'ACCUMULATOR' | 'RANDOM' | 'SUGGESTED';
+type SubTab = 'current' | 'history';
 
 function isMatchDashboardPayload(value: unknown): value is StructuredMatchPayload {
   if (!value || typeof value !== 'object') return false;
@@ -75,11 +78,19 @@ function isMatchDashboardPayload(value: unknown): value is StructuredMatchPayloa
   );
 }
 
+function historyModeFor(mode: Mode): string[] {
+  if (mode === 'MATCH') return ['MATCH'];
+  if (mode === 'RANDOM') return ['RANDOM'];
+  if (mode === 'ACCUMULATOR' || mode === 'SUGGESTED') return ['ACCUMULATOR'];
+  return [];
+}
+
 /**
- * Análisis IA: partido, combinada, sugeridas y scanner aleatorio.
+ * Análisis IA: cada modo tiene pestaña Actual + Historial.
  */
 export default function AnalysesPage() {
   const [mode, setMode] = useState<Mode>('MATCH');
+  const [subTab, setSubTab] = useState<SubTab>('current');
   const [accumulators, setAccumulators] = useState<Accumulator[]>([]);
   const [suggested, setSuggested] = useState<Suggested[]>([]);
   const [matches, setMatches] = useState<MatchOpt[]>([]);
@@ -102,7 +113,7 @@ export default function AnalysesPage() {
   const analyzedMatchIds = useMemo(() => {
     const ids = new Set<string>();
     for (const a of analyses) {
-      if (a.match?.id) ids.add(a.match.id);
+      if (a.match?.id && (a.mode === 'MATCH' || a.mode === 'RANDOM')) ids.add(a.match.id);
     }
     return ids;
   }, [analyses]);
@@ -111,6 +122,11 @@ export default function AnalysesPage() {
     () => matches.filter((m) => !analyzedMatchIds.has(m.id)),
     [matches, analyzedMatchIds]
   );
+
+  const modeHistory = useMemo(() => {
+    const allowed = new Set(historyModeFor(mode));
+    return analyses.filter((a) => allowed.has(a.mode ?? ''));
+  }, [analyses, mode]);
 
   const refresh = async () => {
     setLoading(true);
@@ -148,6 +164,7 @@ export default function AnalysesPage() {
   const run = async (override?: { mode?: Mode; matchId?: string }) => {
     setError(null);
     setResultMsg(null);
+    setSubTab('current');
 
     const activeMode = override?.mode ?? mode;
     const activeMatchId = override?.matchId ?? matchId;
@@ -171,14 +188,15 @@ export default function AnalysesPage() {
       setMatchId(override.matchId);
     }
 
+    // enrich=true → LLM profundo (scrape + TheSportsDB + Poisson). TheSportsDB siempre en API.
     const body =
       activeMode === 'MATCH'
-        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: false }
+        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: true }
         : activeMode === 'RANDOM'
-          ? { mode: 'RANDOM', provider, enrich: false }
+          ? { mode: 'RANDOM', provider, enrich: true }
           : activeMode === 'SUGGESTED'
-            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich: false }
-            : { mode: 'ACCUMULATOR', accumulatorId, provider, enrich: false };
+            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich: true }
+            : { mode: 'ACCUMULATOR', accumulatorId, provider, enrich: true };
 
     try {
       const res = await fetch(apiUrl('/api/analyses'), {
@@ -202,10 +220,9 @@ export default function AnalysesPage() {
 
       const a = data.analysis;
       setResultMsg(
-        `Riesgo: ${a?.riskScore ?? data.result?.riskScore} | EV: ${a?.evScore ?? data.result?.evScore} | Stake: ${a?.recommendedStake ?? data.result?.recommendedStake} | ${a?.iaProvider ?? data.result?.providerUsed}`
+        `Riesgo: ${a?.riskScore} | EV: ${a?.evScore} | Stake: ${a?.recommendedStake} | ${a?.iaProvider}`
       );
 
-      // Limpiar selección de combinada ya analizada
       if (activeMode === 'ACCUMULATOR') setAccumulatorId('');
       if (activeMode === 'MATCH' && activeMatchId) setMatchId('');
 
@@ -226,6 +243,7 @@ export default function AnalysesPage() {
     setResultMsg(null);
     if (isMatchDashboardPayload(a.payload)) {
       setPayload(a.payload);
+      setSubTab('current');
       return;
     }
     setError('Este análisis antiguo no tiene dashboard. Genera uno nuevo.');
@@ -243,179 +261,216 @@ export default function AnalysesPage() {
   return (
     <PageContainer title="Análisis IA" description="Partido, combinada y scanner de huecos">
       <Typography variant="h4" fontWeight={700} mb={2}>
-        Análisis con IA
+        Análisis profundo con IA
+      </Typography>
+      <Typography variant="body2" color="text.secondary" mb={2}>
+        Scraping (tips/cuotas) + TheSportsDB (calendario/forma) + modelo. La API free no se usa en
+        scrapers; solo al analizar partido, combinada o aleatorio.
       </Typography>
 
-      <Card sx={{ mb: 3 }}>
+      <Card sx={{ mb: 2 }}>
         <CardContent>
-          <Stack spacing={2}>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={mode}
-              onChange={(_, v) => {
-                if (v) setMode(v);
-              }}
-            >
-              <ToggleButton value="MATCH">Por partido</ToggleButton>
-              <ToggleButton value="ACCUMULATOR">Mis combinadas</ToggleButton>
-              <ToggleButton value="SUGGESTED">Sugeridas</ToggleButton>
-              <ToggleButton value="RANDOM">Aleatorio / huecos</ToggleButton>
-            </ToggleButtonGroup>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={mode}
+            onChange={(_, v) => {
+              if (!v) return;
+              setMode(v);
+              setSubTab('current');
+              setError(null);
+            }}
+            sx={{ mb: 2, flexWrap: 'wrap' }}
+          >
+            <ToggleButton value="MATCH">Por partido</ToggleButton>
+            <ToggleButton value="ACCUMULATOR">Mis combinadas</ToggleButton>
+            <ToggleButton value="SUGGESTED">Sugeridas</ToggleButton>
+            <ToggleButton value="RANDOM">Aleatorio / huecos</ToggleButton>
+          </ToggleButtonGroup>
 
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
-              {mode === 'MATCH' && (
+          <Tabs
+            value={subTab}
+            onChange={(_, v: SubTab) => setSubTab(v)}
+            sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+          >
+            <Tab value="current" label="Actual" />
+            <Tab value="history" label={`Historial (${modeHistory.length})`} />
+          </Tabs>
+
+          {subTab === 'current' && (
+            <Stack spacing={2}>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
+                {mode === 'MATCH' && (
+                  <TextField
+                    select
+                    label="Partido pendiente"
+                    size="small"
+                    fullWidth
+                    value={matchId}
+                    onChange={(e) => setMatchId(e.target.value)}
+                    helperText={
+                      availableMatches.length === 0
+                        ? 'Sin partidos nuevos (ya analizados o sin scrapers)'
+                        : `${availableMatches.length} sin analizar · ${matches.length} totales`
+                    }
+                  >
+                    {availableMatches.map((m) => (
+                      <MenuItem key={m.id} value={m.id}>
+                        {m.homeTeam} vs {m.awayTeam} ({m.league})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+                {mode === 'ACCUMULATOR' && (
+                  <TextField
+                    select
+                    label="Combinada pendiente"
+                    size="small"
+                    fullWidth
+                    value={accumulatorId}
+                    onChange={(e) => setAccumulatorId(e.target.value)}
+                    helperText={
+                      pendingAccumulators.length === 0
+                        ? 'No hay combinadas sin analizar — créalas en el Creador'
+                        : `${pendingAccumulators.length} pendientes`
+                    }
+                  >
+                    {pendingAccumulators.map((a) => (
+                      <MenuItem key={a.id} value={a.id}>
+                        {a.name ?? a.id} (@{a.totalOdds})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+                {mode === 'SUGGESTED' && (
+                  <TextField
+                    select
+                    label="Combinada sugerida"
+                    size="small"
+                    fullWidth
+                    value={suggestedId}
+                    onChange={(e) => setSuggestedId(e.target.value)}
+                  >
+                    {suggested.map((s) => (
+                      <MenuItem key={s.id} value={s.id}>
+                        [{s.sourceSlug}] {s.title} (@{s.totalOdds})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+                {mode === 'RANDOM' && (
+                  <Alert severity="info" sx={{ flex: 1 }}>
+                    Elige un partido al azar entre los pendientes y propone combinadas con mercados
+                    diversos (no solo +1.5). Cada clic analiza otro partido distinto.
+                  </Alert>
+                )}
                 <TextField
                   select
-                  label="Partido pendiente"
+                  label="Proveedor IA"
                   size="small"
-                  fullWidth
-                  value={matchId}
-                  onChange={(e) => setMatchId(e.target.value)}
-                  helperText={
-                    availableMatches.length === 0
-                      ? 'Sin partidos nuevos (ya analizados o sin scrapers)'
-                      : `${availableMatches.length} sin analizar · ${matches.length} totales`
-                  }
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  sx={{ minWidth: 200 }}
                 >
-                  {availableMatches.map((m) => (
-                    <MenuItem key={m.id} value={m.id}>
-                      {m.homeTeam} vs {m.awayTeam} ({m.league})
+                  {AI_PROVIDERS.map((p) => (
+                    <MenuItem key={p.id} value={p.id}>
+                      {p.label}
                     </MenuItem>
                   ))}
                 </TextField>
-              )}
-              {mode === 'ACCUMULATOR' && (
-                <TextField
-                  select
-                  label="Combinada pendiente"
-                  size="small"
-                  fullWidth
-                  value={accumulatorId}
-                  onChange={(e) => setAccumulatorId(e.target.value)}
-                  helperText={
-                    pendingAccumulators.length === 0
-                      ? 'No hay combinadas sin analizar — créalas en el Creador'
-                      : `${pendingAccumulators.length} pendientes`
-                  }
+                <Button
+                  variant="contained"
+                  size="large"
+                  onClick={() => run()}
+                  disabled={running}
+                  sx={{ minWidth: 200, whiteSpace: 'nowrap' }}
                 >
-                  {pendingAccumulators.map((a) => (
-                    <MenuItem key={a.id} value={a.id}>
-                      {a.name ?? a.id} (@{a.totalOdds})
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  {running ? <CircularProgress size={22} color="inherit" /> : analyzeLabel}
+                </Button>
+              </Stack>
+
+              {error && <Alert severity="error">{error}</Alert>}
+              {resultMsg && <Alert severity="success">{resultMsg}</Alert>}
+
+              {payload && (
+                <Box>
+                  <MatchAnalysisDashboard payload={payload} onAnalyzeMatch={analyzeMatchById} />
+                  {mode === 'RANDOM' && (
+                    <Button
+                      sx={{ mt: 2 }}
+                      variant="outlined"
+                      onClick={() => run({ mode: 'RANDOM' })}
+                      disabled={running}
+                    >
+                      Analizar otro aleatorio
+                    </Button>
+                  )}
+                </Box>
               )}
-              {mode === 'SUGGESTED' && (
-                <TextField
-                  select
-                  label="Combinada sugerida"
-                  size="small"
-                  fullWidth
-                  value={suggestedId}
-                  onChange={(e) => setSuggestedId(e.target.value)}
-                >
-                  {suggested.map((s) => (
-                    <MenuItem key={s.id} value={s.id}>
-                      [{s.sourceSlug}] {s.title} (@{s.totalOdds})
-                    </MenuItem>
-                  ))}
-                </TextField>
+
+              {!payload && !running && (
+                <Typography color="text.secondary">
+                  Configura el filtro y pulsa «{analyzeLabel}» para ver el dashboard aquí.
+                </Typography>
               )}
-              {mode === 'RANDOM' && (
-                <Alert severity="info" sx={{ flex: 1 }}>
-                  Elige un partido al azar entre los pendientes (no reutiliza los ya analizados).
-                  También propone combinadas/huecos nuevos. Pulsa el botón para lanzar otro
-                  análisis distinto.
-                </Alert>
-              )}
-              <TextField
-                select
-                label="Proveedor IA"
-                size="small"
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                sx={{ minWidth: 200 }}
-              >
-                {AI_PROVIDERS.map((p) => (
-                  <MenuItem key={p.id} value={p.id}>
-                    {p.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <Button
-                variant="contained"
-                size="large"
-                onClick={() => run()}
-                disabled={running}
-                sx={{ minWidth: 200, whiteSpace: 'nowrap' }}
-              >
-                {running ? <CircularProgress size={22} color="inherit" /> : analyzeLabel}
-              </Button>
             </Stack>
-          </Stack>
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
           )}
-          {resultMsg && (
-            <Alert severity="success" sx={{ mt: 2 }}>
-              {resultMsg}
-            </Alert>
+
+          {subTab === 'history' && (
+            <Stack spacing={2}>
+              {loading ? (
+                <Box textAlign="center" py={3}>
+                  <CircularProgress />
+                </Box>
+              ) : modeHistory.length === 0 ? (
+                <Typography color="text.secondary">
+                  Aún no hay historial para este modo.
+                </Typography>
+              ) : (
+                modeHistory.map((a) => {
+                  const canDashboard = isMatchDashboardPayload(a.payload);
+                  return (
+                    <Card key={a.id} variant="outlined">
+                      <CardContent>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          mb={1}
+                          flexWrap="wrap"
+                        >
+                          <Chip size="small" label={a.mode ?? 'ACCUMULATOR'} />
+                          <Typography fontWeight={600}>
+                            {a.match
+                              ? `${a.match.homeTeam} vs ${a.match.awayTeam}`
+                              : a.accumulator?.name ?? 'Análisis'}
+                          </Typography>
+                          <Chip size="small" label={a.iaProvider} />
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={new Date(a.createdAt).toLocaleString()}
+                          />
+                          <Button
+                            size="small"
+                            onClick={() => openHistory(a)}
+                            disabled={!canDashboard}
+                          >
+                            Ver en Actual
+                          </Button>
+                        </Stack>
+                        <Typography variant="body2" color="textSecondary">
+                          Riesgo {a.riskScore} · EV {a.evScore} · Stake {a.recommendedStake}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
+            </Stack>
           )}
         </CardContent>
       </Card>
-
-      {payload && (
-        <Box mb={3}>
-          <MatchAnalysisDashboard payload={payload} onAnalyzeMatch={analyzeMatchById} />
-          {mode === 'RANDOM' && (
-            <Stack direction="row" spacing={1} mt={2} flexWrap="wrap">
-              <Button variant="outlined" onClick={() => run({ mode: 'RANDOM' })} disabled={running}>
-                Analizar otro aleatorio
-              </Button>
-            </Stack>
-          )}
-        </Box>
-      )}
-
-      {loading ? (
-        <Box textAlign="center">
-          <CircularProgress />
-        </Box>
-      ) : (
-        <Stack spacing={2}>
-          <Typography variant="h6">Historial</Typography>
-          {analyses.length === 0 && (
-            <Typography color="textSecondary">Aún no hay análisis.</Typography>
-          )}
-          {analyses.map((a) => {
-            const canDashboard = isMatchDashboardPayload(a.payload);
-            return (
-              <Card key={a.id}>
-                <CardContent>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={1} flexWrap="wrap">
-                    <Chip size="small" label={a.mode ?? 'ACCUMULATOR'} />
-                    <Typography fontWeight={600}>
-                      {a.match
-                        ? `${a.match.homeTeam} vs ${a.match.awayTeam}`
-                        : a.accumulator?.name ?? 'Análisis'}
-                    </Typography>
-                    <Chip size="small" label={a.iaProvider} />
-                    <Button size="small" onClick={() => openHistory(a)} disabled={!canDashboard}>
-                      Ver dashboard
-                    </Button>
-                  </Stack>
-                  <Typography variant="body2" color="textSecondary">
-                    Riesgo {a.riskScore} · EV {a.evScore} · Stake {a.recommendedStake}
-                  </Typography>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </Stack>
-      )}
     </PageContainer>
   );
 }

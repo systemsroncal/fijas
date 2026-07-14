@@ -286,9 +286,14 @@ export async function analyzeAccumulatorWithFallback(
   keysByProvider: Partial<Record<AiProvider, string>>,
   accumulatorSummary: string
 ): Promise<AnalysisResult> {
-  const prompt = `Eres un analista experto de apuestas deportivas.
-Analiza la siguiente acumulada y responde SOLO con JSON válido:
-{"risk_score": <1-10>, "ev_score": <número>, "recommended_stake": <1-10>, "rationale": "<breve>"}
+  const prompt = `Eres un analista profesional de apuestas. Debes TOMARTE EL TIEMPO y analizar EN PROFUNDIDAD la acumulada.
+
+Obligatorio:
+1) Evalúa correlación entre piernas, riesgo de same-game, cuotas scrapeadas y huecos del modelo.
+2) No inventes partidos, mercados ni estadísticas ausentes.
+3) Si hay contexto TheSportsDB / forma, úsalo; si falta, dilo y apoya en scraping+modelo.
+4) Responde SOLO JSON válido:
+{"risk_score": <1-10>, "ev_score": <número>, "recommended_stake": <1-10>, "rationale": "<análisis profundo en español, 4-8 frases>"}
 
 Datos de la acumulada:
 ${accumulatorSummary}`;
@@ -307,7 +312,8 @@ ${accumulatorSummary}`;
       const raw = await callProvider(provider, key, [
         {
           role: 'system',
-          content: 'Responde únicamente JSON válido sin markdown.',
+          content:
+            'Analista senior. Piensa con calma y profundidad. Responde únicamente JSON válido sin markdown. Español claro. Cero invención.',
         },
         { role: 'user', content: prompt },
       ]);

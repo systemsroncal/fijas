@@ -20,6 +20,7 @@ import {
 } from '@/lib/match-display';
 import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
 import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
+import { applySportsDbToPayload } from '@/lib/sportsdb/enrich';
 
 const schema = z
   .object({
@@ -224,11 +225,16 @@ export async function POST(request: Request) {
 
       const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
       let payload = buildModelPayload(toCtx(matchForAi), 'MATCH', { form });
+      // TheSportsDB solo en análisis (no en scrapers): forma/calendario profundos
+      payload = await applySportsDbToPayload(payload, {
+        matchDateYmd: localDateISO(),
+        fetchBadges: true,
+      });
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
-      let promptUsed = 'poisson-model';
+      let promptUsed = 'deep-poisson+sportsdb';
 
-      if (body.enrich && Object.keys(keysByProvider).length > 0) {
+      if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
         const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
         payload = enriched.payload;
         raw = enriched.raw;
@@ -318,11 +324,16 @@ export async function POST(request: Request) {
       }
 
       let payload = buildRandomScannerPayload(valid.map(toCtx), { excludeMatchIds });
+      // Profundidad TheSportsDB solo sobre el partido primario (ahorra cuota API)
+      payload = await applySportsDbToPayload(payload, {
+        matchDateYmd: date,
+        fetchBadges: true,
+      });
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
-      let promptUsed = 'random-scanner-poisson';
+      let promptUsed = 'deep-random+sportsdb';
 
-      if (body.enrich && Object.keys(keysByProvider).length > 0) {
+      if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
         const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
         payload = enriched.payload;
         raw = enriched.raw;
@@ -471,9 +482,14 @@ export async function POST(request: Request) {
       accumulator.name ?? 'Combinada'
     );
     let payload: StructuredMatchPayload = built;
+    // TheSportsDB en la pierna ancla (máx. 1 partido) para no quemar 30 req/min
+    payload = await applySportsDbToPayload(payload, {
+      matchDateYmd: localDateISO(),
+      fetchBadges: false,
+    });
     let raw = JSON.stringify(payload);
     let providerUsed: AiProvider = body.provider;
-    let promptUsed = 'accumulator-poisson-model';
+    let promptUsed = 'deep-accumulator+sportsdb';
 
     if (body.enrich !== false && Object.keys(keysByProvider).length > 0) {
       const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);

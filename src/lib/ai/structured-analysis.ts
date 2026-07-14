@@ -1,5 +1,5 @@
 ﻿/**
- * Tipos y builders de anÃ¡lisis estructurado (partido / combinada / random).
+ * Tipos y builders de análisis estructurado (partido / combinada / random).
  */
 
 import { AiProvider } from '@prisma/client';
@@ -26,6 +26,8 @@ import {
   detectSport,
   formatReadablePick,
   isJunkMatch,
+  marketFamily,
+  marketPriority,
 } from '@/lib/match-display';
 
 export type {
@@ -128,7 +130,7 @@ function buildSameMatchGapAccumulators(
             ? 'risky'
             : 'value';
       out.push({
-        title: `Hueco mismo partido Â· ${label}`,
+        title: `Hueco mismo partido · ${label}`,
         riskTier: tier,
         totalOdds,
         legs,
@@ -151,7 +153,7 @@ function buildSameMatchGapAccumulators(
           if (!ok) continue;
           const legs = trio.map((e) => legFromEdge(e, ctx, label));
           out.push({
-            title: `Hueco triple Â· ${label}`,
+            title: `Hueco triple · ${label}`,
             riskTier: 'risky',
             totalOdds: Math.round(legs.reduce((acc, l) => acc * l.odds, 1) * 1000) / 1000,
             legs,
@@ -170,7 +172,7 @@ export function emptyForm(message?: string): TeamFormBlock {
     available: false,
     message:
       message ??
-      'Sin marcadores histÃ³ricos en la base. No se inventan resultados de los Ãºltimos partidos.',
+      'Sin marcadores históricos en la base. No se inventan resultados de los últimos partidos.',
     recentScores: [],
     avgGoalsFor: null,
     avgGoalsAgainst: null,
@@ -197,16 +199,22 @@ export function buildModelPayload(
   const sport = detectSport(ctx.league);
   const form = extras?.form ?? emptyForm();
 
-  const value = edges.find((e) => e.verdict === 'value') ?? null;
+  const byQuality = (a: MarketEdge, b: MarketEdge) =>
+    marketPriority(a.market) - marketPriority(b.market) ||
+    b.edge - a.edge ||
+    b.modelProb - a.modelProb;
+
+  const value =
+    edges.filter((e) => e.verdict === 'value').sort(byQuality)[0] ?? null;
   const safe =
-    edges.find((e) => e.verdict === 'safe') ??
-    edges.filter((e) => e.modelProb >= 0.55).sort((a, b) => b.edge - a.edge)[0] ??
+    edges.filter((e) => e.verdict === 'safe').sort(byQuality)[0] ??
+    edges.filter((e) => e.modelProb >= 0.52).sort(byQuality)[0] ??
     null;
   const risky =
-    edges.find((e) => e.verdict === 'risky') ??
-    edges.filter((e) => e.odds >= 2.2).sort((a, b) => b.edge - a.edge)[0] ??
-    null;
-  const avoid = edges.find((e) => e.verdict === 'avoid') ?? null;
+    edges
+      .filter((e) => e.verdict === 'risky' || (e.odds >= 2.2 && e.modelProb >= 0.22))
+      .sort(byQuality)[0] ?? null;
+  const avoid = edges.filter((e) => e.verdict === 'avoid').sort(byQuality)[0] ?? null;
 
   const label = `${ctx.homeTeam} vs ${ctx.awayTeam}`;
   const home = ctx.homeTeam;
@@ -215,7 +223,7 @@ export function buildModelPayload(
 
   if (safe) {
     proposed.push({
-      title: `Segura Â· ${label}`,
+      title: `Segura · ${label}`,
       riskTier: 'safe',
       totalOdds: safe.odds,
       legs: [legFromEdge(safe, ctx, label)],
@@ -223,7 +231,7 @@ export function buildModelPayload(
   }
   if (value && safe && value.market !== safe.market && areMarketsCompatible(safe.market, value.market)) {
     proposed.push({
-      title: `Value mismo partido Â· ${label}`,
+      title: `Value mismo partido · ${label}`,
       riskTier: 'value',
       totalOdds: Math.round(safe.odds * value.odds * 1000) / 1000,
       legs: [legFromEdge(safe, ctx, label), legFromEdge(value, ctx, label)],
@@ -231,14 +239,14 @@ export function buildModelPayload(
   }
   if (risky) {
     proposed.push({
-      title: `Arriesgada Â· ${label}`,
+      title: `Arriesgada · ${label}`,
       riskTier: 'risky',
       totalOdds: risky.odds,
       legs: [legFromEdge(risky, ctx, label)],
     });
   }
 
-  // MÃ¡s huecos multi-mercado del mismo encuentro
+  // Más huecos multi-mercado del mismo encuentro
   for (const gap of buildSameMatchGapAccumulators(edges, ctx, label)) {
     const sig = gap.legs.map((l) => l.market).sort().join('|');
     if (proposed.some((p) => p.legs.map((l) => l.market).sort().join('|') === sig)) continue;
@@ -246,15 +254,31 @@ export function buildModelPayload(
   }
 
   const bookCount = edges.filter((e) => e.source === 'book').length;
+  const bookEdges = edges.filter((e) => e.source === 'book');
+  const bestBookEdge = Math.max(0, ...bookEdges.map((e) => e.edge), 0);
+  const max1x2 = Math.max(probs.home, probs.draw, probs.away);
+  const min1x2 = Math.min(probs.home, probs.draw, probs.away);
+  const decisiveness = max1x2 - min1x2; // partidos equilibrados → menor confianza
+  const bestPickProb = Math.max(
+    value?.modelProb ?? 0,
+    safe?.modelProb ?? 0,
+    ...edges.map((e) => e.modelProb),
+    0
+  );
+  // Antes: ~53 fijo (45+8) sin cuotas de casa. Ahora varía con 1X2, form y edge real.
   const confidence = Math.round(
     clamp(
-      45 +
-        bookCount * 4 +
-        (value ? 10 : 0) +
-        (safe ? 8 : 0) +
-        Math.max(...edges.map((e) => e.edge), 0) * 30,
-      35,
-      88
+      28 +
+        max1x2 * 32 +
+        decisiveness * 18 +
+        bestPickProb * 12 +
+        Math.min(bookCount, 5) * 4 +
+        bestBookEdge * 35 +
+        (form.available ? 8 : 0) +
+        (ctx.tip ? 3 : 0) +
+        (value ? 4 : 0),
+      30,
+      92
     )
   );
 
@@ -291,30 +315,30 @@ export function buildModelPayload(
       cardsAway: null,
       note: form.available
         ? 'xG del modelo Poisson; medias de goles/tarjetas solo con historial scrapeado.'
-        : 'xG del modelo Poisson. Sin cÃ³rners/tarjetas inventados.',
+        : 'xG del modelo Poisson. Sin córners/tarjetas inventados.',
     },
     form,
     relatedMatches: extras?.relatedMatches ?? [],
     markets: edges.map((e) => edgeToMarket(e, home, away)),
     picks: {
       value: value
-        ? pickFromEdge(value, home, away, 'Edge positivo vs cuota (casa o implÃ­cita del modelo).')
+        ? pickFromEdge(value, home, away, 'Edge positivo vs cuota (casa o implícita del modelo).')
         : null,
       safe: safe
         ? pickFromEdge(safe, home, away, 'Alta probabilidad modelo con edge no negativo.')
         : null,
       risky: risky ? pickFromEdge(risky, home, away, 'Cuota alta; mayor varianza.') : null,
       avoid: avoid
-        ? pickFromEdge(avoid, home, away, 'Probabilidad modelo por debajo de la implÃ­cita.')
+        ? pickFromEdge(avoid, home, away, 'Probabilidad modelo por debajo de la implícita.')
         : null,
     },
     proposedAccumulators: proposed,
     confidence,
     edgeSummary: `Mejor edge: ${
       bestEdge ? labelMarket(bestEdge.market, bestEdge.line, home, away) : 'N/A'
-    }. Cuotas de casa: ${bookCount}/${edges.length}. Î» ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}.`,
+    }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}.`,
     disclaimer:
-      'Solo datos scrapeados + modelo Poisson. No se inventan marcadores, tiros ni props de jugador. Cuotas sin casa = implÃ­citas del modelo.',
+      'Análisis profundo: scraping + TheSportsDB (si hay match) + modelo Poisson. No se inventan marcadores, tiros ni props. Cuotas sin casa = implícitas del modelo.',
     model: probs,
   };
   payload.brief = buildAnalysisBrief(payload);
@@ -328,7 +352,8 @@ function extractJson(raw: string): unknown {
 }
 
 /**
- * LLM solo narra el edge; no aÃ±ade mercados/props inventados.
+ * LLM de análisis profundo: debe tomarse el tiempo de razonar con scrape + TheSportsDB + Poisson.
+ * No inventa mercados/props; solo interpreta datos entregados.
  */
 export async function enrichPayloadWithLlm(
   preferred: AiProvider,
@@ -340,17 +365,27 @@ export async function enrichPayloadWithLlm(
   providerUsed: AiProvider;
   promptUsed: string;
 }> {
-  const prompt = `Eres analista de apuestas. NO inventes mercados, jugadores, cuotas ni estadÃ­sticas.
-Solo responde JSON: {"edgeText":"comentario corto basado SOLO en los datos dados","confidenceDelta":0}
-Si faltan datos, dilo. Prohibido inventar.
+  const prompt = `Eres un analista profesional de apuestas. Debes TOMARTE EL TIEMPO y analizar EN PROFUNDIDAD.
 
-Datos:
+Obligatorio:
+1) Cruza tip/cuotas scrapeadas + modelo Poisson + datos TheSportsDB (si existen).
+2) Evalúa forma reciente, equilibrio 1X2, mercados value/safe/risky y riesgos.
+3) No inventes jugadores, cuotas, marcadores ni estadísticas ausentes.
+4) Si faltan datos TheSportsDB (API free limitada), dilo explícitamente y apoya en scraping+modelo.
+5) Responde SOLO JSON válido:
+{"edgeText":"<análisis profundo en español, 4-8 frases, estructurado>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>"}
+
+Datos del partido (scrape + modelo + sportsdb):
 ${JSON.stringify({
     match: base.match,
     probs: base.probs,
     scoreline: base.scoreline,
     form: base.form,
-    markets: base.markets.slice(0, 10),
+    sportsDb: base.sportsDb ?? null,
+    markets: base.markets.slice(0, 12),
+    picks: base.picks,
+    accumulatorMeta: base.accumulatorMeta ?? null,
+    deepAnalysis: true,
   })}`;
 
   const order: AiProvider[] = [
@@ -366,16 +401,26 @@ ${JSON.stringify({
       const raw = await callProvider(provider, key, [
         {
           role: 'system',
-          content: 'JSON vÃ¡lido Ãºnicamente. Cero invenciÃ³n de datos.',
+          content:
+            'Eres analista senior. Piensa con calma y profundidad. JSON válido únicamente. Cero invención de datos. Español claro.',
         },
         { role: 'user', content: prompt },
       ]);
-      const data = extractJson(raw) as { edgeText?: string; confidenceDelta?: number };
+      const data = extractJson(raw) as {
+        edgeText?: string;
+        confidenceDelta?: number;
+        depthNotes?: string;
+      };
       const cleaned = sanitizeNarrative(data.edgeText, base.edgeSummary);
+      const depth =
+        typeof data.depthNotes === 'string' && data.depthNotes.trim()
+          ? ` | Profundidad: ${data.depthNotes.trim().slice(0, 280)}`
+          : '';
       const next: StructuredMatchPayload = {
         ...base,
-        edgeSummary: cleaned,
-        confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 35, 90),
+        deepAnalysis: true,
+        edgeSummary: `${cleaned}${depth}`,
+        confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 30, 92),
         disclaimer: base.disclaimer,
       };
       next.brief = buildAnalysisBrief(next);
@@ -392,7 +437,7 @@ ${JSON.stringify({
 
   if (lastError && Object.keys(keysByProvider).length === 0) throw lastError;
   return {
-    payload: base,
+    payload: { ...base, deepAnalysis: true },
     raw: JSON.stringify(base),
     providerUsed: preferred,
     promptUsed: prompt,
@@ -454,24 +499,68 @@ export function buildRandomScannerPayload(
     tip: t.match.tip ?? null,
   }));
 
-  const comboPool = shuffleInPlace([...others]);
+  const comboPool = shuffleInPlace([...others, primary].filter(Boolean));
+
+  /** Elige un mercado distinto por partido (evita repetir +1.5 en todas las piernas). */
+  const pickDiverse = (
+    t: (typeof scored)[0],
+    usedFamilies: Set<string>
+  ): { market: string; odds: number; aiProb: number } | null => {
+    const candidates = [
+      t.payload.picks.value,
+      t.payload.picks.safe,
+      t.payload.picks.risky,
+      ...[...t.payload.markets]
+        .filter((m) => m.verdict === 'value' || m.verdict === 'safe' || m.verdict === 'risky')
+        .sort(
+          (a, b) =>
+            marketPriority(a.market) - marketPriority(b.market) || b.edge - a.edge
+        ),
+    ].filter(Boolean) as Array<{ market: string; odds: number; aiProb: number }>;
+
+    for (const c of candidates) {
+      const fam = marketFamily(c.market);
+      // Evitar repetir la misma familia (sobre todo over 1.5) en la combinada
+      if (usedFamilies.has(fam) && fam !== 'other') continue;
+      usedFamilies.add(fam);
+      return c;
+    }
+    // Fallback: mejor pick aunque repita familia
+    const fallback = candidates[0];
+    if (fallback) usedFamilies.add(marketFamily(fallback.market));
+    return fallback ?? null;
+  };
+
+  const usedSafe = new Set<string>();
   const safeLegs = comboPool
-    .map((t) => ({ pick: t.payload.picks.safe ?? t.payload.picks.value, m: t.match }))
-    .filter((x) => x.pick)
+    .map((t) => {
+      const pick = pickDiverse(t, usedSafe);
+      return pick ? { pick, m: t.match } : null;
+    })
+    .filter((x): x is { pick: { market: string; odds: number; aiProb: number }; m: MatchContext & { id?: string } } =>
+      Boolean(x)
+    )
     .slice(0, 3);
-  const valueLegs = comboPool
-    .map((t) => ({ pick: t.payload.picks.value ?? t.payload.picks.safe, m: t.match }))
-    .filter((x) => x.pick)
-    .slice(0, 2);
+
+  const usedValue = new Set<string>();
+  const valueLegs = shuffleInPlace([...comboPool])
+    .map((t) => {
+      const pick = pickDiverse(t, usedValue);
+      return pick ? { pick, m: t.match } : null;
+    })
+    .filter((x): x is { pick: { market: string; odds: number; aiProb: number }; m: MatchContext & { id?: string } } =>
+      Boolean(x)
+    )
+    .slice(0, 3);
 
   const proposed: ProposedAccumulator[] = [];
   if (safeLegs.length >= 2) {
     const legs = safeLegs.map((x) => ({
       matchId: x.m.id,
       matchLabel: `${x.m.homeTeam} vs ${x.m.awayTeam}`,
-      market: x.pick!.market,
-      betChoice: x.pick!.market,
-      odds: x.pick!.odds,
+      market: x.pick.market,
+      betChoice: x.pick.market,
+      odds: x.pick.odds,
     }));
     proposed.push({
       title: 'Combinada segura (aleatoria)',
@@ -480,26 +569,16 @@ export function buildRandomScannerPayload(
       legs,
     });
   }
-  if (valueLegs.length >= 1 && safeLegs.length >= 1) {
-    const a = safeLegs[0];
-    const b = valueLegs.find((v) => v.m.id !== a.m.id) ?? valueLegs[0];
-    if (b && a.m.id !== b.m.id) {
-      const legs = [
-        {
-          matchId: a.m.id,
-          matchLabel: `${a.m.homeTeam} vs ${a.m.awayTeam}`,
-          market: a.pick!.market,
-          betChoice: a.pick!.market,
-          odds: a.pick!.odds,
-        },
-        {
-          matchId: b.m.id,
-          matchLabel: `${b.m.homeTeam} vs ${b.m.awayTeam}`,
-          market: b.pick!.market,
-          betChoice: b.pick!.market,
-          odds: b.pick!.odds,
-        },
-      ];
+  if (valueLegs.length >= 2) {
+    const legs = valueLegs.slice(0, 2).map((x) => ({
+      matchId: x.m.id,
+      matchLabel: `${x.m.homeTeam} vs ${x.m.awayTeam}`,
+      market: x.pick.market,
+      betChoice: x.pick.market,
+      odds: x.pick.odds,
+    }));
+    // Solo si los mercados no son idénticos
+    if (new Set(legs.map((l) => l.market.replace(/^.+·\s*/, ''))).size >= 1) {
       proposed.push({
         title: 'Combinada value (huecos aleatorios)',
         riskTier: 'value',
@@ -571,14 +650,25 @@ export function buildAccumulatorStructuredPayload(
     };
   }
 
+  const usedFamilies = new Set<string>();
   const analyzed = clean.map((m) => {
     const payload = buildModelPayload(m, 'MATCH');
-    const pick =
-      payload.picks.value ??
-      payload.picks.safe ??
-      payload.picks.risky ??
-      [...payload.markets].sort((a, b) => b.edge - a.edge)[0] ??
-      null;
+    const ranked = [
+      payload.picks.value,
+      payload.picks.safe,
+      payload.picks.risky,
+      ...[...payload.markets].sort(
+        (a, b) => marketPriority(a.market) - marketPriority(b.market) || b.edge - a.edge
+      ),
+    ].filter(Boolean) as Array<{ market: string; odds: number; aiProb: number }>;
+
+    let pick = ranked.find((c) => {
+      const fam = marketFamily(c.market);
+      if (usedFamilies.has(fam) && fam !== 'other') return false;
+      return true;
+    }) ?? ranked[0] ?? null;
+
+    if (pick) usedFamilies.add(marketFamily(pick.market));
     return { m, payload, pick };
   });
 

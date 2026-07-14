@@ -171,6 +171,22 @@ export function areMarketsCompatible(a: string, b: string): boolean {
 }
 
 /**
+ * Prioriza resultado 1X2 / BTTS / O/U 2.5 sobre +1.5 (demasiado genérico).
+ * Menor = mejor.
+ */
+export function marketPriority(market: string): number {
+  const l = market.toLowerCase();
+  if (/gana|empate|1x2|local|visitante|home|away|draw/.test(l) && !/hándicap|handicap|ah /.test(l)) {
+    return 0;
+  }
+  if (/ambos marcan|btts/.test(l)) return 1;
+  if (/2\.5/.test(l)) return 2;
+  if (/hándicap|handicap|ah /.test(l)) return 3;
+  if (/1\.5/.test(l)) return 5; // último: suele salir en casi todos los partidos
+  return 4;
+}
+
+/**
  * Cuota usable para una columna 1/X/2, con fallbacks.
  */
 export function resolveOdds(
