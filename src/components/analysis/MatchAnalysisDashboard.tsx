@@ -38,6 +38,7 @@ import {
 } from '@/lib/match-display';
 import MatchResultStatsPanel from '@/components/analysis/MatchResultStatsPanel';
 import { proxiedMediaUrl } from '@/lib/media-proxy';
+import { exportNodeToPng } from '@/lib/export-png';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -75,14 +76,11 @@ function SportIcon({ sport }: { sport?: string }) {
 function TeamBadge({
   name,
   crestUrl,
-  hideCrest,
 }: {
   name: string;
   crestUrl?: string | null;
-  /** Durante export PNG: solo monograma (evita CORS / img rotas) */
-  hideCrest?: boolean;
 }) {
-  const src = hideCrest ? undefined : proxiedMediaUrl(crestUrl);
+  const src = proxiedMediaUrl(crestUrl);
   return (
     <Stack direction="row" spacing={1} alignItems="center">
       <Avatar
@@ -95,19 +93,6 @@ function TeamBadge({
       <Typography fontWeight={700}>{name}</Typography>
     </Stack>
   );
-}
-
-function waitFrames(n = 2) {
-  return new Promise<void>((resolve) => {
-    const step = (left: number) => {
-      if (left <= 0) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(() => step(left - 1));
-    };
-    step(n);
-  });
 }
 
 /**
@@ -191,43 +176,8 @@ export default function MatchAnalysisDashboard({
     setExporting(true);
     setExportError(null);
     try {
-      // 1) Quitar escudos del DOM (monogramas) antes de capturar
-      await waitFrames(3);
-      await new Promise((r) => setTimeout(r, 50));
-
-      const { toPng } = await import('html-to-image');
-      const root = ref.current;
-      if (!root) throw new Error('No hay contenido para exportar');
-
-      // 2) Por si queda algún <img>, ocultarlo en el árbol (ApexCharts / Avatar residual)
-      const imgs = Array.from(root.querySelectorAll('img'));
-      const prev = imgs.map((img) => ({
-        img,
-        src: img.getAttribute('src'),
-        display: img.style.display,
-      }));
-      for (const img of imgs) {
-        img.removeAttribute('src');
-        img.style.display = 'none';
-      }
-
-      const dataUrl = await toPng(root, {
-        cacheBust: false,
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-        skipFonts: true,
-        filter: (node) => {
-          if (node instanceof HTMLImageElement) return false;
-          if (node instanceof HTMLElement && node.dataset.exportIgnore === '1') return false;
-          return true;
-        },
-      });
-
-      for (const p of prev) {
-        if (p.src) p.img.setAttribute('src', p.src);
-        p.img.style.display = p.display;
-      }
-
+      // Escudos se mantienen en UI; para el PNG se incrustan como data URL (sin CORS)
+      const dataUrl = await exportNodeToPng(ref.current);
       const a = document.createElement('a');
       const fileName = m ? `${m.homeTeam}-vs-${m.awayTeam}` : 'analisis';
       a.download = `${fileName.replace(/\s+/g, '_')}-analisis.png`;
@@ -315,19 +265,11 @@ export default function MatchAnalysisDashboard({
                   spacing={2}
                   alignItems={{ md: 'center' }}
                 >
-                  <TeamBadge
-                    name={m.homeTeam}
-                    crestUrl={m.homeCrestUrl}
-                    hideCrest={exporting}
-                  />
+                  <TeamBadge name={m.homeTeam} crestUrl={m.homeCrestUrl} />
                   <Typography color="text.secondary" fontWeight={600}>
                     vs
                   </Typography>
-                  <TeamBadge
-                    name={m.awayTeam}
-                    crestUrl={m.awayCrestUrl}
-                    hideCrest={exporting}
-                  />
+                  <TeamBadge name={m.awayTeam} crestUrl={m.awayCrestUrl} />
                 </Stack>
               ) : (
                 <Typography variant="h5" fontWeight={700}>
@@ -513,7 +455,7 @@ export default function MatchAnalysisDashboard({
                     >
                       <Stack direction="row" spacing={1} alignItems="center" mb={0.75}>
                         <Avatar
-                          src={exporting ? undefined : proxiedMediaUrl(b.badge)}
+                          src={proxiedMediaUrl(b.badge)}
                           sx={{ width: 28, height: 28, fontSize: 11 }}
                         >
                           {(b.name ?? String(side)).slice(0, 2)}

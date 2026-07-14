@@ -163,10 +163,22 @@ class GenericTipsScraper(BaseHtmlScraper):
                 )
         return list(dict.fromkeys(urls))
 
+    def _match_date_from_url(self, html_url: str) -> str:
+        """Inferir fecha del partido desde la URL (hoy / mañana / YYYY-MM-DD)."""
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+        m = re.search(r"(20\d{2}-\d{2}-\d{2})", html_url)
+        if m:
+            return m.group(1)
+        if "tomorrow" in html_url.lower():
+            return tomorrow.isoformat()
+        return today.isoformat()
+
     def parse(self, html_url: str) -> list[dict[str, Any]]:
         soup = soup_from_url(html_url)
         predictions: list[dict[str, Any]] = []
         sport = _sport_from_url(html_url)
+        match_date = self._match_date_from_url(html_url)
         for row in soup.select("table tr")[: self.max_rows]:
             cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
             if len(cells) < 3:
@@ -183,7 +195,7 @@ class GenericTipsScraper(BaseHtmlScraper):
             )
             predictions.append(
                 {
-                    "matchDate": date.today().isoformat(),
+                    "matchDate": match_date,
                     "kickoff": kickoff,
                     "league": league,
                     "homeTeam": home,

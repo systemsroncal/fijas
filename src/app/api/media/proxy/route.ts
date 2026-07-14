@@ -22,14 +22,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Imagen no disponible' }, { status: 502 });
     }
 
-    const ctype = upstream.headers.get('content-type') ?? 'image/png';
-    if (!ctype.startsWith('image/')) {
-      return NextResponse.json({ error: 'No es una imagen' }, { status: 415 });
-    }
-
     const buf = Buffer.from(await upstream.arrayBuffer());
     if (buf.length > MAX_BYTES) {
       return NextResponse.json({ error: 'Imagen demasiado grande' }, { status: 413 });
+    }
+    if (buf.length < 24) {
+      return NextResponse.json({ error: 'Imagen vacía' }, { status: 502 });
+    }
+
+    // Algunos CDN responden application/octet-stream; inferir por magic bytes
+    let ctype = upstream.headers.get('content-type') ?? '';
+    if (!ctype.startsWith('image/')) {
+      if (buf[0] === 0x89 && buf[1] === 0x50) ctype = 'image/png';
+      else if (buf[0] === 0xff && buf[1] === 0xd8) ctype = 'image/jpeg';
+      else if (buf[0] === 0x47 && buf[1] === 0x49) ctype = 'image/gif';
+      else if (buf[0] === 0x52 && buf[1] === 0x49) ctype = 'image/webp';
+      else ctype = 'image/png';
     }
 
     return new NextResponse(buf, {

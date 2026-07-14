@@ -5,6 +5,8 @@ import { apiUrl } from '@/lib/paths';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Box,
+  Button,
+  ButtonGroup,
   Card,
   CardContent,
   Stack,
@@ -30,7 +32,7 @@ import {
   sportLabel,
   type SportKind,
 } from '@/lib/match-display';
-import { localDateISO } from '@/lib/local-date';
+import { addDaysYmd, peruDateISO } from '@/lib/timezone';
 
 type MatchRow = {
   id: string;
@@ -59,12 +61,16 @@ type MatchRow = {
  * Dashboard principal: partidos de hoy con filtros y polling.
  */
 export default function DashboardPage() {
-  const [date, setDate] = useState(() => localDateISO());
+  const todayPeru = peruDateISO();
+  const tomorrowPeru = addDaysYmd(todayPeru, 1);
+  const [date, setDate] = useState(() => peruDateISO());
   const [league, setLeague] = useState('');
   const [sport, setSport] = useState('');
   const [source, setSource] = useState('');
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const dayLabel =
+    date === todayPeru ? 'hoy' : date === tomorrowPeru ? 'mañana' : date;
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -93,20 +99,36 @@ export default function DashboardPage() {
   }, [load]);
 
   return (
-    <PageContainer title="Partidos de hoy" description="Resumen de partidos scrapeados">
+    <PageContainer title={`Partidos de ${dayLabel}`} description="Resumen de partidos scrapeados">
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h4" fontWeight={700}>
-            Partidos de hoy
+            Partidos de {dayLabel}
           </Typography>
-          <Typography color="textSecondary">Filtros por liga, fecha y fuente</Typography>
+          <Typography color="textSecondary">
+            Horarios en hora Perú (America/Lima). Fuentes scrapeadas suelen publicar hora UK.
+          </Typography>
         </Box>
         <LiveMatchesPoller onUpdate={silentReload} />
       </Stack>
 
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
+            <ButtonGroup size="small" variant="outlined">
+              <Button
+                variant={date === todayPeru ? 'contained' : 'outlined'}
+                onClick={() => setDate(todayPeru)}
+              >
+                Hoy
+              </Button>
+              <Button
+                variant={date === tomorrowPeru ? 'contained' : 'outlined'}
+                onClick={() => setDate(tomorrowPeru)}
+              >
+                Mañana
+              </Button>
+            </ButtonGroup>
             <TextField
               type="date"
               label="Fecha"
@@ -165,7 +187,7 @@ export default function DashboardPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Hora</TableCell>
+                  <TableCell>Hora (PE)</TableCell>
                   <TableCell>Deporte</TableCell>
                   <TableCell>Liga</TableCell>
                   <TableCell>Local</TableCell>

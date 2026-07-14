@@ -18,7 +18,8 @@ import {
   isJunkMatch,
   repairMisparsedMatch,
 } from '@/lib/match-display';
-import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
+import { localDateISO } from '@/lib/local-date';
+import { isMatchStillOpenPeru, peruDateISO } from '@/lib/timezone';
 import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
 import { applySportsDbToPayload } from '@/lib/sportsdb/enrich';
 import { fetchMatchStatus } from '@/lib/sportsdb/match-status';
@@ -297,7 +298,7 @@ export async function POST(request: Request) {
     }
 
     if (body.mode === 'RANDOM') {
-      const date = localDateISO();
+      const date = peruDateISO();
       const dayStart = new Date(`${date}T00:00:00.000Z`);
       const dayEnd = new Date(dayStart);
       dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
@@ -336,11 +337,18 @@ export async function POST(request: Request) {
             kickoff: fixed.kickoff ?? m.kickoff,
           };
         })
-        .filter(
-          (m) =>
-            !isJunkMatch(m.homeTeam, m.awayTeam) &&
-            isMatchStillOpen(date, m.kickoff, now, 2.25, { isLive: m.isLive })
-        );
+        .filter((m) => {
+          if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
+          const baseYmd = m.matchDate
+            ? `${m.matchDate.getUTCFullYear()}-${String(m.matchDate.getUTCMonth() + 1).padStart(2, '0')}-${String(m.matchDate.getUTCDate()).padStart(2, '0')}`
+            : date;
+          return isMatchStillOpenPeru({
+            matchDateYmd: baseYmd,
+            kickoff: m.kickoff,
+            now,
+            isLive: m.isLive,
+          });
+        });
       if (valid.length === 0) {
         return NextResponse.json(
           {
