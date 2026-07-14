@@ -390,7 +390,10 @@ export async function POST(request: Request) {
       );
 
       const matches = await prisma.match.findMany({
-        where: { matchDate: { gte: dayStart, lt: dayEnd } },
+        where: {
+          matchDate: { gte: dayStart, lt: dayEnd },
+          OR: [{ phase: null }, { phase: { not: 'finished' } }],
+        },
         include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 } },
         take: 200,
       });
@@ -411,6 +414,7 @@ export async function POST(request: Request) {
         })
         .filter((m) => {
           if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
+          if (m.phase === 'finished') return false;
           const baseYmd = m.matchDate
             ? `${m.matchDate.getUTCFullYear()}-${String(m.matchDate.getUTCMonth() + 1).padStart(2, '0')}-${String(m.matchDate.getUTCDate()).padStart(2, '0')}`
             : date;
@@ -418,7 +422,7 @@ export async function POST(request: Request) {
             matchDateYmd: baseYmd,
             kickoff: m.kickoff,
             now,
-            isLive: m.isLive,
+            isLive: m.isLive || m.phase === 'live',
           });
         });
       if (valid.length === 0) {

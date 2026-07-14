@@ -89,22 +89,41 @@ export async function POST(request: Request) {
       const matchDate = new Date(pred.matchDate);
       const matchKey = buildMatchKey(matchDate, homeTeam, awayTeam, pred.league);
 
+      const existing = await prisma.match.findUnique({
+        where: { matchKey },
+        select: { phase: true, kickoff: true },
+      });
+      const alreadyFinished = existing?.phase === 'finished';
+      // No pisar hora ISO de TheSportsDB con un tipster vacío / peor
+      const nextKickoff =
+        kickoff ||
+        (existing?.kickoff && /^\d{4}-\d{2}-\d{2}T/.test(existing.kickoff)
+          ? existing.kickoff
+          : kickoff);
+
       const match = await prisma.match.upsert({
         where: { matchKey },
         create: {
           matchKey,
           matchDate,
-          kickoff,
+          kickoff: nextKickoff,
           league: pred.league,
           homeTeam,
           awayTeam,
           isLive: pred.isLive ?? false,
+          phase: pred.isLive ? 'live' : 'scheduled',
         },
         update: {
-          kickoff,
+          ...(nextKickoff ? { kickoff: nextKickoff } : {}),
           homeTeam,
           awayTeam,
-          isLive: pred.isLive ?? false,
+          isLive: alreadyFinished ? false : pred.isLive ?? false,
+          // No reabrir partidos marcados FT por TheSportsDB
+          ...(alreadyFinished
+            ? { phase: 'finished' }
+            : pred.isLive
+              ? { phase: 'live' }
+              : {}),
         },
       });
 

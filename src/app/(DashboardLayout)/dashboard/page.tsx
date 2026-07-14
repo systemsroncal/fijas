@@ -96,9 +96,9 @@ export default function DashboardPage() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const missing = await fetchMatches();
-      if (cancelled || missing <= 0) return;
-      // Horas faltantes en background; no bloquea la tabla
+      await fetchMatches();
+      if (cancelled) return;
+      // TheSportsDB: horas + marcar FT (limpia partidos ya jugados)
       const enrichRes = await fetch(apiUrl('/api/matches/enrich-kickoffs'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,7 +106,11 @@ export default function DashboardPage() {
       });
       if (cancelled || !enrichRes.ok) return;
       const enrichData = await enrichRes.json().catch(() => null);
-      if (!cancelled && enrichData?.updated > 0) {
+      if (
+        !cancelled &&
+        enrichData &&
+        (enrichData.updated > 0 || enrichData.markedFinished > 0)
+      ) {
         await fetchMatches({ silent: true });
       }
     })();

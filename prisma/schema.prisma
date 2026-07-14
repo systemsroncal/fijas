@@ -160,6 +160,8 @@ model Match {
   homeTeam  String
   awayTeam  String
   isLive    Boolean  @default(false)
+  /// scheduled | live | finished — sync TheSportsDB / hora
+  phase     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -169,6 +171,7 @@ model Match {
 
   @@index([matchDate])
   @@index([league])
+  @@index([phase])
   @@map("matches")
 }
 

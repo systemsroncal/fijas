@@ -16,8 +16,8 @@ import {
 } from '@/lib/timezone';
 
 /**
- * Lista partidos (rápido): solo Prisma + conversión hora Perú.
- * TheSportsDB no se llama aquí — usar /api/matches/enrich-kickoffs en background.
+ * Lista partidos (rápido): Prisma + hora Perú.
+ * Finalizados (phase=finished o kickoff+2.5h) se ocultan con hideFinished=1.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth();
@@ -41,6 +41,11 @@ export async function GET(request: Request) {
   const matches = await prisma.match.findMany({
     where: {
       matchDate: { gte: dayStart, lte: dayEnd },
+      ...(hideFinished
+        ? {
+            OR: [{ phase: null }, { phase: { not: 'finished' } }],
+          }
+        : {}),
       ...(league ? { league: { contains: league } } : {}),
       ...(source
         ? { predictions: { some: { source: { slug: source } } } }
@@ -99,17 +104,18 @@ export async function GET(request: Request) {
   const filtered = repaired.filter((m) => {
     if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
     if (m.matchDatePeru !== date) return false;
+    if (hideFinished && m.phase === 'finished') return false;
 
     if (hideFinished && date === todayPeru) {
       if (m._kickoffAt) {
-        const end = m._kickoffAt.getTime() + 2.25 * 60 * 60 * 1000;
-        if (!m.isLive && now.getTime() >= end) return false;
+        const end = m._kickoffAt.getTime() + 2.5 * 60 * 60 * 1000;
+        if (!m.isLive && m.phase !== 'live' && now.getTime() >= end) return false;
       } else if (
         !isMatchStillOpenPeru({
           matchDateYmd: m._baseYmd,
           kickoff: m._kickoffSource,
           now,
-          isLive: m.isLive,
+          isLive: m.isLive || m.phase === 'live',
         })
       ) {
         return false;
