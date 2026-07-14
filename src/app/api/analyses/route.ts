@@ -21,6 +21,7 @@ import {
 import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
 import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
 import { applySportsDbToPayload } from '@/lib/sportsdb/enrich';
+import { fetchMatchStatus } from '@/lib/sportsdb/match-status';
 
 const schema = z
   .object({
@@ -226,7 +227,31 @@ export async function POST(request: Request) {
       }
 
       const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
-      let payload = buildModelPayload(toCtx(matchForAi), 'MATCH', { form });
+      let ctx = toCtx(matchForAi);
+      // Condicionar Poisson al marcador live/FT (timeline sincroniza goles)
+      try {
+        const st = await fetchMatchStatus({
+          homeTeam: ctx.homeTeam,
+          awayTeam: ctx.awayTeam,
+          matchDateYmd: localDateISO(),
+          scrapeIsLive: Boolean(match.isLive),
+          includeDetails: false,
+        });
+        const lastMin = [...st.timeline]
+          .map((t) => Number(t.minute))
+          .filter((n) => !Number.isNaN(n))
+          .pop();
+        ctx = {
+          ...ctx,
+          liveHomeScore: st.homeScore,
+          liveAwayScore: st.awayScore,
+          livePhase: st.phase,
+          liveMinute: lastMin ?? null,
+        };
+      } catch {
+        /* sin live: modelo pre-partido */
+      }
+      let payload = buildModelPayload(ctx, 'MATCH', { form });
       // TheSportsDB solo en análisis (no en scrapers): forma/calendario profundos
       payload = await applySportsDbToPayload(payload, {
         matchDateYmd: localDateISO(),
@@ -461,7 +486,7 @@ export async function POST(request: Request) {
       include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 } },
     });
     const predMap = new Map(withPreds.map((m) => [m.id, m]));
-    const contexts = accumulator.matches.map((am) => {
+    const baseContexts = accumulator.matches.map((am) => {
       const full = predMap.get(am.matchId);
       const fixed = repairMisparsedMatch({
         homeTeam: am.match.homeTeam,
@@ -469,19 +494,103 @@ export async function POST(request: Request) {
         kickoff: am.match.kickoff,
         league: am.match.league,
       });
-      return toCtx({
-        id: am.match.id,
-        homeTeam: fixed.homeTeam,
-        awayTeam: fixed.awayTeam,
-        league: am.match.league,
-        kickoff: fixed.kickoff ?? am.match.kickoff,
-        predictions: full?.predictions,
-      });
+      return {
+        ...toCtx({
+          id: am.match.id,
+          homeTeam: fixed.homeTeam,
+          awayTeam: fixed.awayTeam,
+          league: am.match.league,
+          kickoff: fixed.kickoff ?? am.match.kickoff,
+          predictions: full?.predictions,
+        }),
+        scrapeIsLive: Boolean(full?.isLive ?? am.match.isLive),
+        matchDateYmd: am.match.matchDate
+          ? localDateISO(new Date(am.match.matchDate))
+          : localDateISO(),
+      };
     });
+
+    // Live/FT por pierna (máx. 5) para condicionar Poisson al marcador actual
+    const liveContext: Array<{
+      matchId?: string;
+      label: string;
+      score: string | null;
+      phase: string;
+      statusLabel?: string | null;
+      note?: string;
+    }> = [];
+    const contexts: Array<MatchContext & { id: string }> = [];
+    for (let i = 0; i < baseContexts.length; i++) {
+      const c = baseContexts[i];
+      let liveHomeScore: number | null = null;
+      let liveAwayScore: number | null = null;
+      let livePhase: 'scheduled' | 'live' | 'finished' | 'unknown' | null = null;
+      let liveMinute: number | null = null;
+
+      if (i < 5) {
+        try {
+          const st = await fetchMatchStatus({
+            homeTeam: c.homeTeam,
+            awayTeam: c.awayTeam,
+            matchDateYmd: c.matchDateYmd,
+            scrapeIsLive: c.scrapeIsLive,
+            includeDetails: false,
+          });
+          liveHomeScore = st.homeScore;
+          liveAwayScore = st.awayScore;
+          livePhase = st.phase;
+          const lastMin = st.timeline
+            .map((t) => Number(t.minute))
+            .filter((n) => !Number.isNaN(n))
+            .pop();
+          liveMinute = lastMin ?? null;
+          liveContext.push({
+            matchId: c.id,
+            label: `${c.homeTeam} vs ${c.awayTeam}`,
+            score: st.score,
+            phase: st.phase,
+            statusLabel: st.statusLabel,
+            note: st.scoreFromTimeline
+              ? 'Marcador desde cronología'
+              : st.phase === 'live'
+                ? 'En vivo'
+                : st.phase === 'finished'
+                  ? 'Finalizado'
+                  : undefined,
+          });
+        } catch {
+          liveContext.push({
+            matchId: c.id,
+            label: `${c.homeTeam} vs ${c.awayTeam}`,
+            score: null,
+            phase: 'unknown',
+            note: 'Sin estado TheSportsDB',
+          });
+        }
+      }
+
+      contexts.push({
+        id: c.id,
+        homeTeam: c.homeTeam,
+        awayTeam: c.awayTeam,
+        league: c.league,
+        tip: c.tip,
+        oddsHome: c.oddsHome,
+        oddsDraw: c.oddsDraw,
+        oddsAway: c.oddsAway,
+        oddsOver: c.oddsOver,
+        oddsUnder: c.oddsUnder,
+        liveHomeScore,
+        liveAwayScore,
+        livePhase,
+        liveMinute,
+      });
+    }
 
     const built = buildAccumulatorStructuredPayload(
       contexts,
-      accumulator.name ?? 'Combinada'
+      accumulator.name ?? 'Combinada',
+      { liveContext }
     );
     let payload: StructuredMatchPayload = built;
     // TheSportsDB en la pierna ancla (máx. 1 partido) para no quemar 30 req/min

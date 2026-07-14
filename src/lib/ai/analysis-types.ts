@@ -91,6 +91,17 @@ export type StructuredMatchPayload = {
       market: string;
       odds: number;
       aiProb: number;
+      liveScore?: string | null;
+      livePhase?: string | null;
+    }>;
+    /** Contexto live/FT usado al analizar la combinada */
+    liveContext?: Array<{
+      matchId?: string;
+      label: string;
+      score: string | null;
+      phase: string;
+      statusLabel?: string | null;
+      note?: string;
     }>;
   };
   probs: { home: number; draw: number; away: number };

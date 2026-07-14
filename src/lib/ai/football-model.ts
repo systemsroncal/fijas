@@ -13,6 +13,11 @@ export type MatchContext = {
   oddsAway?: number | null;
   oddsOver?: number | null;
   oddsUnder?: number | null;
+  /** Marcador en vivo / FT (TheSportsDB) para condicionar el Poisson */
+  liveHomeScore?: number | null;
+  liveAwayScore?: number | null;
+  livePhase?: 'scheduled' | 'live' | 'finished' | 'unknown' | null;
+  liveMinute?: number | null;
 };
 
 export type ModelProbs = {
@@ -87,10 +92,34 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 /**
+ * Fracción de partido restante según fase/minuto (para Poisson condicionado).
+ */
+function remainingFraction(ctx: MatchContext): number {
+  if (ctx.livePhase === 'finished') return 0;
+  if (ctx.liveMinute != null && ctx.liveMinute >= 0) {
+    return clamp(1 - ctx.liveMinute / 95, 0.02, 1);
+  }
+  if (ctx.livePhase === 'live') return 0.45;
+  return 1;
+}
+
+/**
  * Distribución 1X2 y mercados derivados vía rejilla Poisson 0..8.
+ * Si hay marcador live/FT, condiciona: final = actual + goles restantes.
  */
 export function predictMatch(ctx: MatchContext): ModelProbs {
-  const { home: lh, away: la } = estimateLambdas(ctx);
+  const { home: lhBase, away: laBase } = estimateLambdas(ctx);
+  const ch = ctx.liveHomeScore;
+  const ca = ctx.liveAwayScore;
+  const hasLive =
+    ch != null &&
+    ca != null &&
+    (ctx.livePhase === 'live' || ctx.livePhase === 'finished' || ch + ca > 0);
+
+  const rem = hasLive ? remainingFraction(ctx) : 1;
+  const lh = hasLive ? lhBase * rem : lhBase;
+  const la = hasLive ? laBase * rem : laBase;
+
   let pHome = 0;
   let pDraw = 0;
   let pAway = 0;
@@ -98,15 +127,27 @@ export function predictMatch(ctx: MatchContext): ModelProbs {
   let over25 = 0;
   let bttsYes = 0;
 
-  for (let h = 0; h <= 8; h++) {
-    for (let a = 0; a <= 8; a++) {
-      const p = poissonPmf(lh, h) * poissonPmf(la, a);
-      if (h > a) pHome += p;
-      else if (h === a) pDraw += p;
-      else pAway += p;
-      if (h + a > 1.5) over15 += p;
-      if (h + a > 2.5) over25 += p;
-      if (h > 0 && a > 0) bttsYes += p;
+  if (hasLive && rem <= 0.02) {
+    // Partido acabado (o casi): resultado fijado
+    pHome = ch! > ca! ? 1 : 0;
+    pDraw = ch! === ca! ? 1 : 0;
+    pAway = ch! < ca! ? 1 : 0;
+    over15 = ch! + ca! > 1.5 ? 1 : 0;
+    over25 = ch! + ca! > 2.5 ? 1 : 0;
+    bttsYes = ch! > 0 && ca! > 0 ? 1 : 0;
+  } else {
+    for (let hAdd = 0; hAdd <= 8; hAdd++) {
+      for (let aAdd = 0; aAdd <= 8; aAdd++) {
+        const p = poissonPmf(lh, hAdd) * poissonPmf(la, aAdd);
+        const h = hasLive ? ch! + hAdd : hAdd;
+        const a = hasLive ? ca! + aAdd : aAdd;
+        if (h > a) pHome += p;
+        else if (h === a) pDraw += p;
+        else pAway += p;
+        if (h + a > 1.5) over15 += p;
+        if (h + a > 2.5) over25 += p;
+        if (h > 0 && a > 0) bttsYes += p;
+      }
     }
   }
 
@@ -118,8 +159,8 @@ export function predictMatch(ctx: MatchContext): ModelProbs {
     over15,
     over25,
     bttsYes,
-    lambdaHome: lh,
-    lambdaAway: la,
+    lambdaHome: hasLive ? lhBase : lh,
+    lambdaAway: hasLive ? laBase : la,
   };
 }
 

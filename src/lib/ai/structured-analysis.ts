@@ -365,6 +365,11 @@ export async function enrichPayloadWithLlm(
   providerUsed: AiProvider;
   promptUsed: string;
 }> {
+  const liveHint =
+    base.accumulatorMeta?.liveContext?.length || base.sportsDb?.matchedEvent?.score
+      ? '\nIMPORTANTE: hay marcador/estadísticas en vivo o FT. CONDICIONA el análisis a ese resultado actual (no ignores un 2-0 en curso).'
+      : '';
+
   const prompt = `Eres un analista profesional de apuestas. Debes TOMARTE EL TIEMPO y analizar EN PROFUNDIDAD.
 
 Obligatorio:
@@ -372,10 +377,12 @@ Obligatorio:
 2) Evalúa forma reciente, equilibrio 1X2, mercados value/safe/risky y riesgos.
 3) No inventes jugadores, cuotas, marcadores ni estadísticas ausentes.
 4) Si faltan datos TheSportsDB (API free limitada), dilo explícitamente y apoya en scraping+modelo.
-5) Responde SOLO JSON válido:
+5) Si hay liveContext o marcador FT, úsalo como prioridad sobre la predicción pre-partido.
+6) Responde SOLO JSON válido:
 {"edgeText":"<análisis profundo en español, 4-8 frases, estructurado>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>"}
+${liveHint}
 
-Datos del partido (scrape + modelo + sportsdb):
+Datos (scrape + modelo + sportsdb + live):
 ${JSON.stringify({
     match: base.match,
     probs: base.probs,
@@ -385,6 +392,7 @@ ${JSON.stringify({
     markets: base.markets.slice(0, 12),
     picks: base.picks,
     accumulatorMeta: base.accumulatorMeta ?? null,
+    liveContext: base.accumulatorMeta?.liveContext ?? null,
     deepAnalysis: true,
   })}`;
 
@@ -402,7 +410,7 @@ ${JSON.stringify({
         {
           role: 'system',
           content:
-            'Eres analista senior. Piensa con calma y profundidad. JSON válido únicamente. Cero invención de datos. Español claro.',
+            'Eres analista senior. Piensa con calma y profundidad. JSON válido únicamente. Cero invención de datos. Español claro. Si hay marcador en vivo, priorízalo.',
         },
         { role: 'user', content: prompt },
       ]);
@@ -623,7 +631,17 @@ export function buildRandomScannerPayload(
  */
 export function buildAccumulatorStructuredPayload(
   matches: Array<MatchContext & { id?: string }>,
-  name: string
+  name: string,
+  extras?: {
+    liveContext?: Array<{
+      matchId?: string;
+      label: string;
+      score: string | null;
+      phase: string;
+      statusLabel?: string | null;
+      note?: string;
+    }>;
+  }
 ): StructuredMatchPayload & {
   resolvedLegs: Array<{
     matchId?: string;
@@ -633,6 +651,8 @@ export function buildAccumulatorStructuredPayload(
     market: string;
     odds: number;
     aiProb: number;
+    liveScore?: string | null;
+    livePhase?: string | null;
   }>;
 } {
   const clean = matches.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam));
@@ -672,15 +692,23 @@ export function buildAccumulatorStructuredPayload(
     return { m, payload, pick };
   });
 
-  const resolvedLegs = analyzed.map(({ m, pick }) => ({
-    matchId: m.id,
-    homeTeam: m.homeTeam,
-    awayTeam: m.awayTeam,
-    league: m.league,
-    market: pick && 'market' in pick ? pick.market : 'Sin pick',
-    odds: pick && 'odds' in pick ? Number(pick.odds) : 1.5,
-    aiProb: pick && 'aiProb' in pick ? Number(pick.aiProb) : 0,
-  }));
+  const resolvedLegs = analyzed.map(({ m, pick }) => {
+    const liveScore =
+      m.liveHomeScore != null && m.liveAwayScore != null
+        ? `${m.liveHomeScore}-${m.liveAwayScore}`
+        : null;
+    return {
+      matchId: m.id,
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      league: m.league,
+      market: pick && 'market' in pick ? pick.market : 'Sin pick',
+      odds: pick && 'odds' in pick ? Number(pick.odds) : 1.5,
+      aiProb: pick && 'aiProb' in pick ? Number(pick.aiProb) : 0,
+      liveScore,
+      livePhase: m.livePhase ?? null,
+    };
+  });
 
   const totalOdds =
     Math.round(resolvedLegs.reduce((acc, l) => acc * (l.odds > 1 ? l.odds : 1.5), 1) * 1000) /
@@ -714,6 +742,14 @@ export function buildAccumulatorStructuredPayload(
     proposed.push(gap);
   }
 
+  const liveBits = (extras?.liveContext ?? [])
+    .filter((l) => l.score || l.phase === 'live' || l.phase === 'finished')
+    .map((l) => `${l.label} ${l.score ?? 's/m'} (${l.phase})`)
+    .slice(0, 6);
+  const liveNote = liveBits.length
+    ? ` Contexto en vivo/FT: ${liveBits.join(' · ')}.`
+    : '';
+
   const payload: StructuredMatchPayload = {
     ...primary.payload,
     mode: 'ACCUMULATOR',
@@ -734,7 +770,9 @@ export function buildAccumulatorStructuredPayload(
             market: resolvedLegs[0].market,
             odds: resolvedLegs[0].odds,
             aiProb: resolvedLegs[0].aiProb,
-            rationale: 'Pick automático del modelo para la primera pierna.',
+            rationale: resolvedLegs[0].liveScore
+              ? `Pick con marcador actual ${resolvedLegs[0].liveScore}.`
+              : 'Pick automático del modelo para la primera pierna.',
           }
         : null,
       safe: resolvedLegs[1]
@@ -742,13 +780,15 @@ export function buildAccumulatorStructuredPayload(
             market: resolvedLegs[1].market,
             odds: resolvedLegs[1].odds,
             aiProb: resolvedLegs[1].aiProb,
-            rationale: 'Pick automático del modelo para la segunda pierna.',
+            rationale: resolvedLegs[1].liveScore
+              ? `Pick con marcador actual ${resolvedLegs[1].liveScore}.`
+              : 'Pick automático del modelo para la segunda pierna.',
           }
         : primary.payload.picks.safe,
       risky: primary.payload.picks.risky,
       avoid: primary.payload.picks.avoid,
     },
-    edgeSummary: `Combinada «${name}» · ${resolvedLegs.length} partidos · cuota modelo @${totalOdds}. El modelo eligió el resultado de cada partido.`,
+    edgeSummary: `Combinada «${name}» · ${resolvedLegs.length} partidos · cuota modelo @${totalOdds}. Poisson condicionado al marcador en vivo/FT cuando existe.${liveNote}`,
     confidence: Math.round(
       analyzed.reduce((a, x) => a + x.payload.confidence, 0) / Math.max(analyzed.length, 1)
     ),
@@ -761,7 +801,10 @@ export function buildAccumulatorStructuredPayload(
         market: l.market,
         odds: l.odds,
         aiProb: l.aiProb,
+        liveScore: l.liveScore,
+        livePhase: l.livePhase,
       })),
+      liveContext: extras?.liveContext,
     },
   };
   payload.brief = buildAnalysisBrief(payload);

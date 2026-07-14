@@ -38,7 +38,7 @@ const phaseColor: Record<
 
 /**
  * Marcador + estadísticas (live o FT) vía TheSportsDB free.
- * Auto-refresh cada 60s si está en vivo.
+ * Auto-refresh cada 25s si está en vivo.
  */
 export default function MatchResultStatsPanel({
   matchId,
@@ -69,9 +69,12 @@ export default function MatchResultStatsPanel({
     if (sport) params.set('sport', sport);
     if (date) params.set('date', date);
     params.set('details', '1');
+    params.set('_ts', String(Date.now())); // evitar caché del navegador
 
     try {
-      const res = await fetch(apiUrl(`/api/match-status?${params.toString()}`));
+      const res = await fetch(apiUrl(`/api/match-status?${params.toString()}`), {
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(typeof data.error === 'string' ? data.error : 'No se pudo cargar el estado');
@@ -92,7 +95,7 @@ export default function MatchResultStatsPanel({
 
   useEffect(() => {
     if (status?.phase !== 'live') return;
-    const id = window.setInterval(() => void load(), 60_000);
+    const id = window.setInterval(() => void load(), 25_000);
     return () => window.clearInterval(id);
   }, [status?.phase, load]);
 
@@ -139,8 +142,13 @@ export default function MatchResultStatsPanel({
           {status.phase === 'live' ? 'Resultado en vivo' : 'Resultado y estadísticas'}
         </Typography>
         <Chip size="small" color={phaseColor[status.phase]} label={phaseLabel[status.phase]} />
-        {status.status && <Chip size="small" variant="outlined" label={status.status} />}
+        {(status.statusLabel || status.status) && (
+          <Chip size="small" variant="outlined" label={status.statusLabel || status.status} />
+        )}
         {status.progress && <Chip size="small" variant="outlined" label={status.progress} />}
+        {status.scoreFromTimeline && (
+          <Chip size="small" color="info" variant="outlined" label="Marcador desde goles" />
+        )}
         <Button size="small" onClick={() => void load()} disabled={loading}>
           Actualizar
         </Button>
@@ -162,7 +170,7 @@ export default function MatchResultStatsPanel({
           fontWeight={800}
           sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 90, textAlign: 'center' }}
         >
-          {status.score ?? '— : —'}
+          {status.score ? status.score.replace('-', ' - ') : '— : —'}
         </Typography>
         <Typography fontWeight={700} sx={{ minWidth: 100 }}>
           {status.awayTeam ?? awayTeam ?? 'Visitante'}
@@ -193,8 +201,8 @@ export default function MatchResultStatsPanel({
               </TableRow>
             </TableHead>
             <TableBody>
-              {status.stats.slice(0, 16).map((s) => (
-                <TableRow key={s.name} hover>
+              {status.stats.slice(0, 18).map((s) => (
+                <TableRow key={s.key ?? s.name} hover>
                   <TableCell>{s.home}</TableCell>
                   <TableCell align="center">{s.name}</TableCell>
                   <TableCell align="right">{s.away}</TableCell>
@@ -208,15 +216,15 @@ export default function MatchResultStatsPanel({
       {status.timeline.length > 0 && (
         <Box>
           <Typography fontWeight={700} gutterBottom variant="body2">
-            Cronología
+            Cronología en tiempo real
           </Typography>
           <Stack spacing={0.75}>
-            {status.timeline.slice(0, 20).map((t, i) => (
+            {status.timeline.slice(0, 24).map((t, i) => (
               <Typography key={`${t.minute}-${t.player}-${i}`} variant="body2">
                 <strong>{t.minute}&apos;</strong> {t.type}
                 {t.detail ? ` · ${t.detail}` : ''}
                 {t.player ? ` — ${t.player}` : ''}
-                {t.assist ? ` (as. ${t.assist})` : ''}
+                {t.assist ? ` (asist. ${t.assist})` : ''}
                 {t.team ? ` [${t.team}]` : ''}
               </Typography>
             ))}
@@ -226,7 +234,7 @@ export default function MatchResultStatsPanel({
 
       {status.phase === 'scheduled' && (
         <Alert severity="info" variant="outlined" sx={{ mt: 1 }}>
-          Aún no hay marcador. Cuando pase a live o FT, pulsa Actualizar (o reabre el análisis).
+          Aún no hay marcador. Cuando pase a live o final, se actualizará solo (o pulsa Actualizar).
         </Alert>
       )}
 
