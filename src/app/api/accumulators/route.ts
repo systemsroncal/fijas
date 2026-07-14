@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-guard';
+import { localDateISO } from '@/lib/local-date';
 
 const createSchema = z.object({
   name: z.string().optional(),
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     const accumulator = await prisma.accumulator.create({
       data: {
         userId: auth.user.id,
-        name: body.name ?? `Combinada ${new Date().toISOString().slice(0, 10)}`,
+        name: body.name ?? `Combinada ${localDateISO()}`,
         totalOdds: new Prisma.Decimal(totalOdds.toFixed(3)),
         matches: {
           create: body.legs.map((leg) => ({

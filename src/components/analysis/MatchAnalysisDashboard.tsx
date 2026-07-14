@@ -203,9 +203,9 @@ export default function MatchAnalysisDashboard({
             <Stack spacing={1}>
               {(
                 [
-                  ['Local', payload.probs.home],
-                  ['Empate', payload.probs.draw],
-                  ['Visitante', payload.probs.away],
+                  [`${m?.homeTeam ?? 'Local'} GANA`, payload.probs.home],
+                  ['EMPATE', payload.probs.draw],
+                  [`${m?.awayTeam ?? 'Visitante'} GANA`, payload.probs.away],
                 ] as const
               ).map(([label, v]) => (
                 <Box key={label}>
@@ -382,34 +382,53 @@ export default function MatchAnalysisDashboard({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {payload.markets.slice(0, 16).map((row, i) => (
-                  <TableRow key={`${row.market}-${i}`}>
-                    <TableCell>{row.market}</TableCell>
-                    <TableCell>{row.odds.toFixed(2)}</TableCell>
-                    <TableCell>{row.aiProb}%</TableCell>
-                    <TableCell>{(row.edge * 100).toFixed(1)}%</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={
-                          row.source === 'book'
-                            ? 'casa'
-                            : row.source === 'implied'
-                              ? 'implícita'
-                              : row.source
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={row.verdict}
-                        color={verdictColor[row.verdict] ?? 'default'}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {payload.markets.slice(0, 16).map((row, i) => {
+                  const parts = row.market.split(' · ');
+                  const matchPart = parts.length > 1 ? parts[0] : null;
+                  const pickPart = parts.length > 1 ? parts.slice(1).join(' · ') : row.market;
+                  return (
+                    <TableRow key={`${row.market}-${i}`}>
+                      <TableCell>
+                        {matchPart ? (
+                          <>
+                            <Typography component="span" fontWeight={800} variant="body2">
+                              {matchPart}
+                            </Typography>
+                            <Typography component="span" variant="body2" color="text.secondary">
+                              {' · '}
+                              {pickPart}
+                            </Typography>
+                          </>
+                        ) : (
+                          pickPart
+                        )}
+                      </TableCell>
+                      <TableCell>{row.odds.toFixed(2)}</TableCell>
+                      <TableCell>{row.aiProb}%</TableCell>
+                      <TableCell>{(row.edge * 100).toFixed(1)}%</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            row.source === 'book'
+                              ? 'casa'
+                              : row.source === 'implied'
+                                ? 'implícita'
+                                : row.source
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={row.verdict}
+                          color={verdictColor[row.verdict] ?? 'default'}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </Box>
@@ -484,10 +503,16 @@ export default function MatchAnalysisDashboard({
                         direction="row"
                         justifyContent="space-between"
                         alignItems="center"
+                        sx={{ py: 0.35 }}
                       >
-                        <Typography variant="body2" color="text.secondary">
-                          {leg.matchLabel}: {leg.market} @{leg.odds}
-                        </Typography>
+                        <Box>
+                          <Typography variant="body2" fontWeight={800} component="span">
+                            {leg.matchLabel}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" component="div">
+                            Posible resultado: <strong>{leg.market}</strong> @{leg.odds}
+                          </Typography>
+                        </Box>
                         {leg.matchId && onAnalyzeMatch && (
                           <Button size="small" onClick={() => onAnalyzeMatch(leg.matchId!)}>
                             Ver partido
@@ -514,11 +539,26 @@ export default function MatchAnalysisDashboard({
               {brief?.headline ?? 'Resumen del análisis'}
             </Typography>
             <Stack component="ul" spacing={0.75} sx={{ m: 0, pl: 2.5 }}>
-              {(brief?.bullets ?? []).map((b, i) => (
-                <Typography key={i} component="li" variant="body2">
-                  {b}
-                </Typography>
-              ))}
+              {(brief?.bullets ?? []).map((b, i) => {
+                const partido = b.match(/^Partido:\s*(.+?)\s*\(/);
+                if (partido) {
+                  const rest = b.slice('Partido: '.length);
+                  const vsIdx = rest.search(/\s*\(/);
+                  const matchName = vsIdx > 0 ? rest.slice(0, vsIdx) : rest;
+                  const after = vsIdx > 0 ? rest.slice(vsIdx) : '';
+                  return (
+                    <Typography key={i} component="li" variant="body2">
+                      Partido: <strong>{matchName.trim()}</strong>
+                      {after}
+                    </Typography>
+                  );
+                }
+                return (
+                  <Typography key={i} component="li" variant="body2">
+                    {b}
+                  </Typography>
+                );
+              })}
             </Stack>
             {brief?.dataSources && (
               <Box mt={2}>

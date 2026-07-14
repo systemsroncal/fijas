@@ -1,20 +1,24 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-guard';
+import { isJunkMatch, repairMisparsedMatch } from '@/lib/match-display';
+import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
 
 /**
  * Lista partidos con predicciones recientes (filtros: date, league, source).
+ * Repara filas SaferTip mal parseadas y oculta partidos ya terminados del día.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth();
   if (auth.error) return auth.error;
 
   const { searchParams } = new URL(request.url);
-  const date = searchParams.get('date'); // YYYY-MM-DD
+  const date = searchParams.get('date') ?? localDateISO();
   const league = searchParams.get('league');
   const source = searchParams.get('source');
+  const hideFinished = searchParams.get('hideFinished') !== '0';
 
-  const dayStart = date ? new Date(`${date}T00:00:00.000Z`) : startOfTodayUtc();
+  const dayStart = new Date(`${date}T00:00:00.000Z`);
   const dayEnd = new Date(dayStart);
   dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
 
@@ -37,15 +41,27 @@ export async function GET(request: Request) {
     take: 200,
   });
 
-  const junk = /^(time|match|date|good|bad|league|home|away|vs|tbd|n\/?a|-|—|team|score|result|odds|tip)$/i;
-  const filtered = matches.filter(
-    (m) => !junk.test(m.homeTeam.trim()) && !junk.test(m.awayTeam.trim())
-  );
+  const now = new Date();
+  const repaired = matches.map((m) => {
+    const fixed = repairMisparsedMatch({
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      kickoff: m.kickoff,
+      league: m.league,
+    });
+    return {
+      ...m,
+      homeTeam: fixed.homeTeam,
+      awayTeam: fixed.awayTeam,
+      kickoff: fixed.kickoff ?? m.kickoff,
+    };
+  });
+
+  const filtered = repaired.filter((m) => {
+    if (isJunkMatch(m.homeTeam, m.awayTeam)) return false;
+    if (hideFinished && !isMatchStillOpen(date, m.kickoff, now)) return false;
+    return true;
+  });
 
   return NextResponse.json({ matches: filtered, updating: false });
-}
-
-function startOfTodayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }

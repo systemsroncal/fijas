@@ -3,6 +3,7 @@
  */
 
 import type { AnalysisBrief, StructuredMatchPayload } from '@/lib/ai/analysis-types';
+import { formatReadablePick } from '@/lib/match-display';
 
 /** Elimina JSON / props inventados / mezcla EN del texto libre. */
 export function sanitizeNarrative(text: string | null | undefined, fallback: string): string {
@@ -25,17 +26,23 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
   const bookMarkets = markets.filter((x) => x.source === 'book');
   const impliedMarkets = markets.filter((x) => x.source === 'implied');
   const best = [...markets].sort((a, b) => b.edge - a.edge)[0];
+  const tipLabel =
+    m?.tip != null
+      ? formatReadablePick(m.tip, m.homeTeam, m.awayTeam)
+      : null;
 
   const bullets: string[] = [];
   if (m && m.homeTeam !== 'N/A') {
     bullets.push(
       `Partido: ${m.homeTeam} vs ${m.awayTeam} (${m.league}).` +
-        (m.tip ? ` Tip scrapeado: ${m.tip}.` : ' Sin tip scrapeado.')
+        (tipLabel && tipLabel !== '—'
+          ? ` Tip scrapeado: ${tipLabel}.`
+          : ' Sin tip scrapeado.')
     );
   }
-  if (payload.probs) {
+  if (payload.probs && m) {
     bullets.push(
-      `Probabilidades modelo Poisson — Local ${payload.probs.home}%, Empate ${payload.probs.draw}%, Visitante ${payload.probs.away}%.`
+      `Probabilidades modelo — ${m.homeTeam} GANA ${payload.probs.home}%, EMPATE ${payload.probs.draw}%, ${m.awayTeam} GANA ${payload.probs.away}%.`
     );
   }
   if (payload.scoreline?.mostLikely) {
@@ -91,6 +98,12 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
       `Pick seguro: ${payload.picks.safe.market} @ ${payload.picks.safe.odds.toFixed(2)}.`
     );
   }
+  const sameMatchGaps = (payload.proposedAccumulators ?? []).filter((a) => a.legs.length >= 2);
+  if (sameMatchGaps.length > 0) {
+    bullets.push(
+      `Huecos multi-mercado detectados: ${sameMatchGaps.length} combinada(s) con varias selecciones del mismo partido.`
+    );
+  }
 
   return {
     headline:
@@ -99,10 +112,10 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
         : 'Resumen del scanner de huecos',
     bullets,
     dataSources: [
-      'Modelo Poisson (probabilidades 1X2 / O-U / BTTS)',
+      'Modelo Poisson (probabilidades resultado / O-U / BTTS)',
       bookMarkets.length > 0 ? 'Cuotas scrapeadas de casa' : 'Sin cuotas de casa en este partido',
       form?.available ? 'Marcadores históricos scrapeados en BD' : 'Sin historial de marcadores en BD',
-      m?.tip ? 'Tip de fuente de scraping' : 'Sin tip de scraping',
+      tipLabel && tipLabel !== '—' ? 'Tip de fuente de scraping' : 'Sin tip de scraping',
     ],
     limitations: [
       'No se inventan tiros a puerta, goleadores ni props de jugador.',

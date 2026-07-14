@@ -21,8 +21,12 @@ import {
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import { AI_PROVIDERS } from '@/lib/ai/providers-client';
 import MatchAnalysisDashboard from '@/components/analysis/MatchAnalysisDashboard';
+import AccumulatorAnalysisCard, {
+  type AccumulatorResultView,
+} from '@/components/analysis/AccumulatorAnalysisCard';
 import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { isJunkMatch } from '@/lib/match-display';
+import { localDateISO } from '@/lib/local-date';
 
 type Accumulator = {
   id: string;
@@ -59,15 +63,7 @@ type Analysis = {
   match?: MatchOpt | null;
 };
 
-type AccumulatorResult = {
-  riskScore: string | number | null;
-  evScore: string | number | null;
-  recommendedStake: string | number | null;
-  provider: string;
-  summary?: string;
-  response?: string;
-  name?: string | null;
-};
+type AccumulatorResult = AccumulatorResultView;
 
 type Mode = 'MATCH' | 'ACCUMULATOR' | 'RANDOM' | 'SUGGESTED';
 
@@ -106,7 +102,7 @@ export default function AnalysesPage() {
 
   const refresh = async () => {
     setLoading(true);
-    const date = new Date().toISOString().slice(0, 10);
+    const date = localDateISO();
     const [aRes, sRes, anRes, mRes] = await Promise.all([
       fetch(apiUrl('/api/accumulators')),
       fetch(apiUrl('/api/accumulators/suggested')),
@@ -191,15 +187,22 @@ export default function AnalysesPage() {
         setPayload(candidate);
       } else if (activeMode === 'ACCUMULATOR' || activeMode === 'SUGGESTED') {
         const a = data.analysis;
+        const p =
+          typeof candidate === 'object' && candidate
+            ? (candidate as {
+                summary?: string;
+                rationale?: string;
+                legs?: AccumulatorResult['legs'];
+              })
+            : null;
         setAccResult({
           riskScore: a?.riskScore ?? data.result?.riskScore ?? null,
           evScore: a?.evScore ?? data.result?.evScore ?? null,
           recommendedStake: a?.recommendedStake ?? data.result?.recommendedStake ?? null,
           provider: a?.iaProvider ?? data.result?.providerUsed ?? provider,
-          summary:
-            typeof candidate === 'object' && candidate && 'summary' in candidate
-              ? String((candidate as { summary?: string }).summary ?? '')
-              : undefined,
+          summary: p?.summary,
+          rationale: p?.rationale,
+          legs: p?.legs,
           response: a?.response,
           name: a?.accumulator?.name ?? null,
         });
@@ -231,13 +234,19 @@ export default function AnalysesPage() {
       return;
     }
     if (a.mode === 'ACCUMULATOR' || (!a.match && a.accumulator)) {
-      const p = a.payload as { summary?: string } | null;
+      const p = a.payload as {
+        summary?: string;
+        rationale?: string;
+        legs?: AccumulatorResult['legs'];
+      } | null;
       setAccResult({
         riskScore: a.riskScore,
         evScore: a.evScore,
         recommendedStake: a.recommendedStake,
         provider: a.iaProvider,
         summary: p?.summary,
+        rationale: p?.rationale,
+        legs: p?.legs,
         response: a.response,
         name: a.accumulator?.name ?? null,
       });
@@ -367,35 +376,7 @@ export default function AnalysesPage() {
         </Box>
       )}
 
-      {accResult && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Typography variant="h6" fontWeight={700} gutterBottom>
-              Resultado · {accResult.name ?? 'Combinada'}
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" mb={2}>
-              <Chip label={`Riesgo ${accResult.riskScore}`} />
-              <Chip label={`EV ${accResult.evScore}`} />
-              <Chip label={`Stake ${accResult.recommendedStake}`} />
-              <Chip label={accResult.provider} color="primary" variant="outlined" />
-            </Stack>
-            {accResult.summary && (
-              <Typography
-                variant="body2"
-                component="pre"
-                sx={{ whiteSpace: 'pre-wrap', mb: 1, color: 'text.secondary' }}
-              >
-                {accResult.summary}
-              </Typography>
-            )}
-            {accResult.response && (
-              <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
-                {accResult.response.slice(0, 2000)}
-              </Typography>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {accResult && <AccumulatorAnalysisCard result={accResult} />}
 
       {loading ? (
         <Box textAlign="center">

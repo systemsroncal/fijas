@@ -21,7 +21,8 @@ import {
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import LiveMatchesPoller from '@/components/LiveMatchesPoller';
-import { hasBookOdds, isJunkMatch, normalizeTip } from '@/lib/match-display';
+import { hasBookOdds, isJunkMatch, normalizeTip, formatReadablePick } from '@/lib/match-display';
+import { localDateISO } from '@/lib/local-date';
 
 type MatchRow = {
   id: string;
@@ -49,7 +50,7 @@ type MatchRow = {
  * Dashboard principal: partidos de hoy con filtros y polling.
  */
 export default function DashboardPage() {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localDateISO());
   const [league, setLeague] = useState('');
   const [source, setSource] = useState('');
   const [matches, setMatches] = useState<MatchRow[]>([]);
@@ -144,7 +145,9 @@ export default function DashboardPage() {
                   <TableCell>Local</TableCell>
                   <TableCell>Visitante</TableCell>
                   <TableCell>Tip</TableCell>
-                  <TableCell>1X2</TableCell>
+                  <TableCell align="center">1</TableCell>
+                  <TableCell align="center">X</TableCell>
+                  <TableCell align="center">2</TableCell>
                   <TableCell>O/U</TableCell>
                   <TableCell>BTTS</TableCell>
                   <TableCell>Fuente</TableCell>
@@ -153,34 +156,54 @@ export default function DashboardPage() {
               <TableBody>
                 {matches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} align="center">
-                      Sin partidos para esta fecha. Ejecuta el scraper o espera la próxima corrida.
+                    <TableCell colSpan={11} align="center">
+                      Sin partidos pendientes para esta fecha. Ejecuta el scraper o espera la próxima
+                      corrida.
                     </TableCell>
                   </TableRow>
                 )}
                 {matches.map((m) => {
                   const p = m.predictions[0];
-                  const tip = normalizeTip(p?.betChoice) ?? p?.betChoice ?? null;
+                  const tipRaw = p?.betChoice ?? null;
+                  const tipCode = normalizeTip(tipRaw);
+                  const tipLabel = tipRaw
+                    ? formatReadablePick(tipRaw, m.homeTeam, m.awayTeam)
+                    : null;
                   const book = hasBookOdds(p);
                   return (
                     <TableRow key={m.id} hover>
                       <TableCell>{m.kickoff ?? '—'}</TableCell>
                       <TableCell>{m.league}</TableCell>
-                      <TableCell>{m.homeTeam}</TableCell>
-                      <TableCell>{m.awayTeam}</TableCell>
                       <TableCell>
-                        {tip ? (
-                          <Chip size="small" label={String(tip)} color="primary" variant="outlined" />
+                        <Typography fontWeight={700} variant="body2" component="span">
+                          {m.homeTeam}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography fontWeight={700} variant="body2" component="span">
+                          {m.awayTeam}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {tipLabel ? (
+                          <Chip
+                            size="small"
+                            label={tipLabel}
+                            color="primary"
+                            variant="outlined"
+                          />
                         ) : (
                           '—'
                         )}
                       </TableCell>
-                      <TableCell>
-                        {book && p
-                          ? `${p.oddsHome ?? '-'} / ${p.oddsDraw ?? '-'} / ${p.oddsAway ?? '-'}`
-                          : p?.odds
-                            ? String(p.odds)
-                            : '—'}
+                      <TableCell align="center">
+                        {book && p?.oddsHome ? String(p.oddsHome) : tipCode === '1' ? 'tip' : '—'}
+                      </TableCell>
+                      <TableCell align="center">
+                        {book && p?.oddsDraw ? String(p.oddsDraw) : tipCode === 'X' ? 'tip' : '—'}
+                      </TableCell>
+                      <TableCell align="center">
+                        {book && p?.oddsAway ? String(p.oddsAway) : tipCode === '2' ? 'tip' : '—'}
                       </TableCell>
                       <TableCell>
                         {p && (p.oddsOver || p.oddsUnder)

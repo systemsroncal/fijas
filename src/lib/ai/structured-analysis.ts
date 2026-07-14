@@ -21,7 +21,12 @@ import type {
   TeamFormBlock,
 } from '@/lib/ai/analysis-types';
 import { buildAnalysisBrief, sanitizeNarrative } from '@/lib/ai/analysis-brief';
-import { detectSport, formatMarketLabel, isJunkMatch } from '@/lib/match-display';
+import {
+  areMarketsCompatible,
+  detectSport,
+  formatReadablePick,
+  isJunkMatch,
+} from '@/lib/match-display';
 
 export type {
   AnalysisMarket,
@@ -40,9 +45,18 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-function edgeToMarket(e: MarketEdge): AnalysisMarket {
+function labelMarket(
+  market: string,
+  line: string | null | undefined,
+  home: string,
+  away: string
+): string {
+  return formatReadablePick(market, home, away, line);
+}
+
+function edgeToMarket(e: MarketEdge, home: string, away: string): AnalysisMarket {
   return {
-    market: formatMarketLabel(e.market, e.line),
+    market: labelMarket(e.market, e.line, home, away),
     line: e.line,
     odds: e.odds,
     aiProb: pct(e.modelProb),
@@ -52,13 +66,103 @@ function edgeToMarket(e: MarketEdge): AnalysisMarket {
   };
 }
 
-function pickFromEdge(e: MarketEdge, rationale: string): AnalysisPick {
+function pickFromEdge(e: MarketEdge, home: string, away: string, rationale: string): AnalysisPick {
   return {
-    market: formatMarketLabel(e.market, e.line),
+    market: labelMarket(e.market, e.line, home, away),
     odds: e.odds,
     aiProb: pct(e.modelProb),
     rationale,
   };
+}
+
+function legFromEdge(
+  e: MarketEdge,
+  ctx: MatchContext & { id?: string },
+  label: string
+) {
+  const market = labelMarket(e.market, e.line, ctx.homeTeam, ctx.awayTeam);
+  return {
+    matchId: ctx.id,
+    matchLabel: label,
+    market,
+    betChoice: market,
+    odds: e.odds,
+  };
+}
+
+/**
+ * Huecos: varias selecciones compatibles del mismo partido (SGP / same-game).
+ */
+function buildSameMatchGapAccumulators(
+  edges: MarketEdge[],
+  ctx: MatchContext & { id?: string },
+  label: string
+): ProposedAccumulator[] {
+  const candidates = edges
+    .filter(
+      (e) =>
+        e.verdict === 'value' ||
+        e.verdict === 'safe' ||
+        (e.edge >= 0.02 && e.modelProb >= 0.42)
+    )
+    .sort((a, b) => b.edge - a.edge)
+    .slice(0, 8);
+
+  const out: ProposedAccumulator[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      const a = candidates[i];
+      const b = candidates[j];
+      if (!areMarketsCompatible(a.market, b.market)) continue;
+      const key = [a.market, b.market].sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const legs = [legFromEdge(a, ctx, label), legFromEdge(b, ctx, label)];
+      const totalOdds = Math.round(legs.reduce((acc, l) => acc * l.odds, 1) * 1000) / 1000;
+      const tier =
+        a.verdict === 'safe' && b.verdict === 'safe'
+          ? 'safe'
+          : a.verdict === 'risky' || b.verdict === 'risky'
+            ? 'risky'
+            : 'value';
+      out.push({
+        title: `Hueco mismo partido · ${label}`,
+        riskTier: tier,
+        totalOdds,
+        legs,
+      });
+      if (out.length >= 3) break;
+    }
+    if (out.length >= 3) break;
+  }
+
+  // Triple hueco si hay 3 mercados mutuamente compatibles
+  if (candidates.length >= 3) {
+    for (let i = 0; i < candidates.length; i++) {
+      for (let j = i + 1; j < candidates.length; j++) {
+        for (let k = j + 1; k < candidates.length; k++) {
+          const trio = [candidates[i], candidates[j], candidates[k]];
+          const ok =
+            areMarketsCompatible(trio[0].market, trio[1].market) &&
+            areMarketsCompatible(trio[0].market, trio[2].market) &&
+            areMarketsCompatible(trio[1].market, trio[2].market);
+          if (!ok) continue;
+          const legs = trio.map((e) => legFromEdge(e, ctx, label));
+          out.push({
+            title: `Hueco triple · ${label}`,
+            riskTier: 'risky',
+            totalOdds: Math.round(legs.reduce((acc, l) => acc * l.odds, 1) * 1000) / 1000,
+            legs,
+          });
+          return out.slice(0, 4);
+        }
+      }
+    }
+  }
+
+  return out.slice(0, 4);
 }
 
 export function emptyForm(message?: string): TeamFormBlock {
@@ -105,6 +209,8 @@ export function buildModelPayload(
   const avoid = edges.find((e) => e.verdict === 'avoid') ?? null;
 
   const label = `${ctx.homeTeam} vs ${ctx.awayTeam}`;
+  const home = ctx.homeTeam;
+  const away = ctx.awayTeam;
   const proposed: ProposedAccumulator[] = [];
 
   if (safe) {
@@ -112,38 +218,15 @@ export function buildModelPayload(
       title: `Segura · ${label}`,
       riskTier: 'safe',
       totalOdds: safe.odds,
-      legs: [
-        {
-          matchId: ctx.id,
-          matchLabel: label,
-          market: formatMarketLabel(safe.market, safe.line),
-          betChoice: formatMarketLabel(safe.market, safe.line),
-          odds: safe.odds,
-        },
-      ],
+      legs: [legFromEdge(safe, ctx, label)],
     });
   }
-  if (value && safe && value.market !== safe.market) {
+  if (value && safe && value.market !== safe.market && areMarketsCompatible(safe.market, value.market)) {
     proposed.push({
-      title: `Value SGP · ${label}`,
+      title: `Value mismo partido · ${label}`,
       riskTier: 'value',
       totalOdds: Math.round(safe.odds * value.odds * 1000) / 1000,
-      legs: [
-        {
-          matchId: ctx.id,
-          matchLabel: label,
-          market: formatMarketLabel(safe.market, safe.line),
-          betChoice: formatMarketLabel(safe.market, safe.line),
-          odds: safe.odds,
-        },
-        {
-          matchId: ctx.id,
-          matchLabel: label,
-          market: formatMarketLabel(value.market, value.line),
-          betChoice: formatMarketLabel(value.market, value.line),
-          odds: value.odds,
-        },
-      ],
+      legs: [legFromEdge(safe, ctx, label), legFromEdge(value, ctx, label)],
     });
   }
   if (risky) {
@@ -151,16 +234,15 @@ export function buildModelPayload(
       title: `Arriesgada · ${label}`,
       riskTier: 'risky',
       totalOdds: risky.odds,
-      legs: [
-        {
-          matchId: ctx.id,
-          matchLabel: label,
-          market: formatMarketLabel(risky.market, risky.line),
-          betChoice: formatMarketLabel(risky.market, risky.line),
-          odds: risky.odds,
-        },
-      ],
+      legs: [legFromEdge(risky, ctx, label)],
     });
+  }
+
+  // Más huecos multi-mercado del mismo encuentro
+  for (const gap of buildSameMatchGapAccumulators(edges, ctx, label)) {
+    const sig = gap.legs.map((l) => l.market).sort().join('|');
+    if (proposed.some((p) => p.legs.map((l) => l.market).sort().join('|') === sig)) continue;
+    proposed.push(gap);
   }
 
   const bookCount = edges.filter((e) => e.source === 'book').length;
@@ -175,6 +257,8 @@ export function buildModelPayload(
       88
     )
   );
+
+  const bestEdge = [...edges].sort((a, b) => b.edge - a.edge)[0];
 
   const payload: StructuredMatchPayload = {
     mode,
@@ -211,24 +295,23 @@ export function buildModelPayload(
     },
     form,
     relatedMatches: extras?.relatedMatches ?? [],
-    markets: edges.map(edgeToMarket),
+    markets: edges.map((e) => edgeToMarket(e, home, away)),
     picks: {
       value: value
-        ? pickFromEdge(value, 'Edge positivo vs cuota (casa o implícita del modelo).')
+        ? pickFromEdge(value, home, away, 'Edge positivo vs cuota (casa o implícita del modelo).')
         : null,
-      safe: safe ? pickFromEdge(safe, 'Alta probabilidad modelo con edge no negativo.') : null,
-      risky: risky ? pickFromEdge(risky, 'Cuota alta; mayor varianza.') : null,
+      safe: safe
+        ? pickFromEdge(safe, home, away, 'Alta probabilidad modelo con edge no negativo.')
+        : null,
+      risky: risky ? pickFromEdge(risky, home, away, 'Cuota alta; mayor varianza.') : null,
       avoid: avoid
-        ? pickFromEdge(avoid, 'Probabilidad modelo por debajo de la implícita.')
+        ? pickFromEdge(avoid, home, away, 'Probabilidad modelo por debajo de la implícita.')
         : null,
     },
     proposedAccumulators: proposed,
     confidence,
     edgeSummary: `Mejor edge: ${
-      formatMarketLabel(
-        [...edges].sort((a, b) => b.edge - a.edge)[0]?.market ?? 'N/A',
-        [...edges].sort((a, b) => b.edge - a.edge)[0]?.line
-      )
+      bestEdge ? labelMarket(bestEdge.market, bestEdge.line, home, away) : 'N/A'
     }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}.`,
     disclaimer:
       'Solo datos scrapeados + modelo Poisson. No se inventan marcadores, tiros ni props de jugador. Cuotas sin casa = implícitas del modelo.',
@@ -413,10 +496,19 @@ export function buildRandomScannerPayload(
         .slice(0, 2)
         .map((m) => ({
           ...m,
-          market: `${t.match.homeTeam} — ${m.market}`,
+          market: `${t.match.homeTeam} vs ${t.match.awayTeam} · ${m.market}`,
         }))
     ),
-    proposedAccumulators: [...proposed, ...top[0].payload.proposedAccumulators],
+    proposedAccumulators: [
+      ...proposed,
+      // Huecos same-match de los mejores partidos del scanner
+      ...top.slice(0, 3).flatMap((t) =>
+        t.payload.proposedAccumulators.filter(
+          (a) => a.legs.length >= 2 && a.title.toLowerCase().includes('hueco')
+        )
+      ),
+      ...top[0].payload.proposedAccumulators.filter((a) => a.legs.length === 1),
+    ].slice(0, 8),
     edgeSummary: `Scanner sobre ${clean.length} partidos válidos. Mejor edge: ${top[0].bestEdge.toFixed(3)}.`,
     confidence: Math.round(
       top.reduce((a, t) => a + t.payload.confidence, 0) / Math.max(top.length, 1)

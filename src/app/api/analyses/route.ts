@@ -15,8 +15,11 @@ import {
 import { MatchContext } from '@/lib/ai/football-model';
 import {
   extractScoreFromText,
+  formatReadablePick,
   isJunkMatch,
+  repairMisparsedMatch,
 } from '@/lib/match-display';
+import { isMatchStillOpen, localDateISO } from '@/lib/local-date';
 import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
 
 const schema = z
@@ -49,6 +52,7 @@ function toCtx(m: {
   homeTeam: string;
   awayTeam: string;
   league: string;
+  kickoff?: string | null;
   predictions?: Array<{
     betChoice?: string | null;
     oddsHome?: Prisma.Decimal | null;
@@ -59,11 +63,17 @@ function toCtx(m: {
     statsNote?: string | null;
   }>;
 }): MatchContext & { id: string } {
+  const fixed = repairMisparsedMatch({
+    homeTeam: m.homeTeam,
+    awayTeam: m.awayTeam,
+    kickoff: m.kickoff,
+    league: m.league,
+  });
   const p = m.predictions?.[0];
   return {
     id: m.id,
-    homeTeam: m.homeTeam,
-    awayTeam: m.awayTeam,
+    homeTeam: fixed.homeTeam,
+    awayTeam: fixed.awayTeam,
     league: m.league,
     tip: p?.betChoice,
     oddsHome: p?.oddsHome != null ? Number(p.oddsHome) : null,
@@ -191,7 +201,19 @@ export async function POST(request: Request) {
       if (!match) {
         return NextResponse.json({ error: 'Partido no encontrado' }, { status: 404 });
       }
-      if (isJunkMatch(match.homeTeam, match.awayTeam)) {
+      const fixedTeams = repairMisparsedMatch({
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        kickoff: match.kickoff,
+        league: match.league,
+      });
+      const matchForAi = {
+        ...match,
+        homeTeam: fixedTeams.homeTeam,
+        awayTeam: fixedTeams.awayTeam,
+        kickoff: fixedTeams.kickoff ?? match.kickoff,
+      };
+      if (isJunkMatch(matchForAi.homeTeam, matchForAi.awayTeam)) {
         return NextResponse.json(
           {
             error:
@@ -201,8 +223,8 @@ export async function POST(request: Request) {
         );
       }
 
-      const form = await loadTeamForm(match.homeTeam, match.awayTeam);
-      let payload = buildModelPayload(toCtx(match), 'MATCH', { form });
+      const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
+      let payload = buildModelPayload(toCtx(matchForAi), 'MATCH', { form });
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'poisson-model';
@@ -243,22 +265,41 @@ export async function POST(request: Request) {
     }
 
     if (body.mode === 'RANDOM') {
-      const dayStart = new Date();
-      dayStart.setUTCHours(0, 0, 0, 0);
+      const date = localDateISO();
+      const dayStart = new Date(`${date}T00:00:00.000Z`);
       const dayEnd = new Date(dayStart);
       dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+      const now = new Date();
 
       const matches = await prisma.match.findMany({
         where: { matchDate: { gte: dayStart, lt: dayEnd } },
         include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 1 } },
         take: 80,
       });
-      const valid = matches.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam));
+      const valid = matches
+        .map((m) => {
+          const fixed = repairMisparsedMatch({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            kickoff: m.kickoff,
+            league: m.league,
+          });
+          return {
+            ...m,
+            homeTeam: fixed.homeTeam,
+            awayTeam: fixed.awayTeam,
+            kickoff: fixed.kickoff ?? m.kickoff,
+          };
+        })
+        .filter(
+          (m) =>
+            !isJunkMatch(m.homeTeam, m.awayTeam) && isMatchStillOpen(date, m.kickoff, now)
+        );
       if (valid.length === 0) {
         return NextResponse.json(
           {
             error:
-              'No hay partidos válidos hoy (solo cabeceras/basura del scraper). Re-ejecuta scrapers de fuentes tip.',
+              'No hay partidos válidos pendientes hoy. Re-ejecuta scrapers o prueba más tarde.',
           },
           { status: 400 }
         );
@@ -325,8 +366,11 @@ export async function POST(request: Request) {
       });
 
       for (const leg of legs.slice(0, 12)) {
-        const home = String(leg.home ?? leg.label?.split(' vs ')[0] ?? 'TBD').trim();
-        const away = String(leg.away ?? leg.label?.split(' vs ')[1] ?? 'TBD').trim();
+        let home = String(leg.home ?? leg.label?.split(/\s+vs\s+/i)[0] ?? 'TBD').trim();
+        let away = String(leg.away ?? leg.label?.split(/\s+vs\s+/i)[1] ?? 'TBD').trim();
+        const repaired = repairMisparsedMatch({ homeTeam: home, awayTeam: away, league: String(leg.league ?? '') });
+        home = repaired.homeTeam;
+        away = repaired.awayTeam;
         if (isJunkMatch(home, away)) continue;
         const league = String(leg.league ?? suggested.sourceSlug);
         const matchKey = `suggested|${suggested.id}|${home}|${away}|${league}`.slice(0, 190);
@@ -336,11 +380,16 @@ export async function POST(request: Request) {
           create: {
             matchKey,
             matchDate: suggested.matchDate,
+            kickoff: repaired.kickoff ?? undefined,
             league,
             homeTeam: home,
             awayTeam: away,
           },
-          update: {},
+          update: {
+            homeTeam: home,
+            awayTeam: away,
+            kickoff: repaired.kickoff ?? undefined,
+          },
         });
 
         await prisma.accumulatorMatch.create({
@@ -374,12 +423,35 @@ export async function POST(request: Request) {
       );
     }
 
+    const legsForUi = accumulator.matches.map((m) => {
+      const fixed = repairMisparsedMatch({
+        homeTeam: m.match.homeTeam,
+        awayTeam: m.match.awayTeam,
+        kickoff: m.match.kickoff,
+        league: m.match.league,
+      });
+      const betChoice = formatReadablePick(
+        m.betChoice ?? 'N/A',
+        fixed.homeTeam,
+        fixed.awayTeam
+      );
+      return {
+        matchId: m.matchId,
+        kickoff: fixed.kickoff ?? m.match.kickoff,
+        homeTeam: fixed.homeTeam,
+        awayTeam: fixed.awayTeam,
+        league: m.match.league,
+        betChoice,
+        odds: m.odds != null ? String(m.odds) : '?',
+      };
+    });
+
     const summary = [
       `Total odds: ${accumulator.totalOdds}`,
-      ...accumulator.matches.map(
-        (m) =>
-          `- ${m.match.homeTeam} vs ${m.match.awayTeam} (${m.match.league}) | ${m.betChoice ?? 'N/A'} @ ${m.odds ?? '?'}`
-      ),
+      ...legsForUi.map((leg) => {
+        const time = leg.kickoff ? `${leg.kickoff} ` : '';
+        return `- ${time}${leg.homeTeam} vs ${leg.awayTeam} (${leg.league}) | ${leg.betChoice} @ ${leg.odds}`;
+      }),
     ].join('\n');
 
     const result = await analyzeAccumulatorWithFallback(
@@ -399,9 +471,24 @@ export async function POST(request: Request) {
         payload: {
           mode: 'ACCUMULATOR',
           summary,
+          legs: legsForUi,
           riskScore: result.riskScore,
           evScore: result.evScore,
           recommendedStake: result.recommendedStake,
+          rationale: (() => {
+            try {
+              const raw = result.rawResponse.trim();
+              const start = raw.indexOf('{');
+              const end = raw.lastIndexOf('}');
+              if (start >= 0 && end > start) {
+                const obj = JSON.parse(raw.slice(start, end + 1)) as { rationale?: string };
+                return typeof obj.rationale === 'string' ? obj.rationale : undefined;
+              }
+            } catch {
+              /* ignore */
+            }
+            return undefined;
+          })(),
         } as Prisma.InputJsonValue,
         riskScore: new Prisma.Decimal(result.riskScore),
         evScore: new Prisma.Decimal(result.evScore),

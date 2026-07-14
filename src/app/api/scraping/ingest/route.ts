@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { validateApiSecret } from '@/lib/api-guard';
 import { buildMatchKey } from '@/lib/match-key';
+import { repairMisparsedMatch } from '@/lib/match-display';
 import { LogCategory, Prisma } from '@prisma/client';
 
 const predictionSchema = z.object({
@@ -68,22 +69,34 @@ export async function POST(request: Request) {
     let inserted = 0;
 
     for (const pred of data.predictions) {
+      const fixed = repairMisparsedMatch({
+        homeTeam: pred.homeTeam,
+        awayTeam: pred.awayTeam,
+        kickoff: pred.kickoff,
+        league: pred.league,
+      });
+      const homeTeam = fixed.homeTeam;
+      const awayTeam = fixed.awayTeam;
+      const kickoff = fixed.kickoff ?? pred.kickoff;
+
       const matchDate = new Date(pred.matchDate);
-      const matchKey = buildMatchKey(matchDate, pred.homeTeam, pred.awayTeam, pred.league);
+      const matchKey = buildMatchKey(matchDate, homeTeam, awayTeam, pred.league);
 
       const match = await prisma.match.upsert({
         where: { matchKey },
         create: {
           matchKey,
           matchDate,
-          kickoff: pred.kickoff,
+          kickoff,
           league: pred.league,
-          homeTeam: pred.homeTeam,
-          awayTeam: pred.awayTeam,
+          homeTeam,
+          awayTeam,
           isLive: pred.isLive ?? false,
         },
         update: {
-          kickoff: pred.kickoff,
+          kickoff,
+          homeTeam,
+          awayTeam,
           isLive: pred.isLive ?? false,
         },
       });

@@ -22,7 +22,8 @@ import {
   Typography,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
-import { isJunkMatch, normalizeTip, resolveOdds } from '@/lib/match-display';
+import { formatReadablePick, isJunkMatch, normalizeTip, resolveOdds } from '@/lib/match-display';
+import { localDateISO } from '@/lib/local-date';
 
 type MatchRow = {
   id: string;
@@ -62,7 +63,7 @@ export default function AccumulatorBuilderPage() {
 
   useEffect(() => {
     const load = async () => {
-      const date = new Date().toISOString().slice(0, 10);
+      const date = localDateISO();
       const res = await fetch(apiUrl(`/api/matches?date=${date}`));
       if (res.ok) {
         const data = await res.json();
@@ -198,9 +199,9 @@ export default function AccumulatorBuilderPage() {
                 <TableRow>
                   <TableCell>Partido</TableCell>
                   <TableCell>Tip</TableCell>
-                  <TableCell>1</TableCell>
-                  <TableCell>X</TableCell>
-                  <TableCell>2</TableCell>
+                  <TableCell>Local gana</TableCell>
+                  <TableCell>Empate</TableCell>
+                  <TableCell>Visita gana</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -210,7 +211,9 @@ export default function AccumulatorBuilderPage() {
                   return (
                     <TableRow key={m.id}>
                       <TableCell>
-                        {m.homeTeam} vs {m.awayTeam}
+                        <Typography fontWeight={800} variant="body2">
+                          {m.homeTeam} vs {m.awayTeam}
+                        </Typography>
                         <Typography variant="caption" display="block" color="textSecondary">
                           {m.league} {m.kickoff ?? ''}
                           {p?.source?.name ? ` · ${p.source.name}` : ''}
@@ -218,9 +221,18 @@ export default function AccumulatorBuilderPage() {
                       </TableCell>
                       <TableCell>
                         {tip ? (
-                          <Chip size="small" color="primary" label={tip} variant="outlined" />
+                          <Chip
+                            size="small"
+                            color="primary"
+                            label={formatReadablePick(tip, m.homeTeam, m.awayTeam)}
+                            variant="outlined"
+                          />
                         ) : p?.betChoice ? (
-                          <Chip size="small" label={p.betChoice} variant="outlined" />
+                          <Chip
+                            size="small"
+                            label={formatReadablePick(p.betChoice, m.homeTeam, m.awayTeam)}
+                            variant="outlined"
+                          />
                         ) : (
                           '—'
                         )}

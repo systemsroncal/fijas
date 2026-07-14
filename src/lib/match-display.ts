@@ -11,11 +11,14 @@ const JUNK_CONTAINS =
 /**
  * Detecta filas basura del scraper (cabeceras de tabla parseadas como partidos).
  */
+const TIME_ONLY = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+
 export function isJunkMatch(homeTeam: string, awayTeam: string): boolean {
   const h = homeTeam.trim();
   const a = awayTeam.trim();
   if (!h || !a) return true;
   if (h.length < 3 || a.length < 3) return true;
+  if (TIME_ONLY.test(h) || TIME_ONLY.test(a)) return true;
   if (JUNK_EXACT.test(h) || JUNK_EXACT.test(a)) return true;
   if (JUNK_CONTAINS.test(h) || JUNK_CONTAINS.test(a)) return true;
   // Ambos genéricos tipo Time/Match o Date/Score
@@ -65,6 +68,106 @@ export function formatMarketLabel(market: string, line?: string | null): string 
   }
 
   return market.replace(/\bOver\b/gi, '+').replace(/\bUnder\b/gi, '-');
+}
+
+/**
+ * Traduce 1 / X / 2 / 1X2 / dobles a texto entendible con nombres de equipos.
+ * Ej: 1 → "España GANA", X → "EMPATE", 2 → "Francia GANA"
+ */
+export function formatReadablePick(
+  pick: string | null | undefined,
+  homeTeam?: string | null,
+  awayTeam?: string | null,
+  line?: string | null
+): string {
+  if (!pick?.trim()) return '—';
+  const home = (homeTeam?.trim() || 'Local').trim();
+  const away = (awayTeam?.trim() || 'Visitante').trim();
+  const raw = `${pick} ${line ?? ''}`.trim();
+  const t = raw.trim();
+  const lower = t.toLowerCase();
+
+  // Ya legible
+  if (/^.+\s+gana$/i.test(t) || t.toUpperCase() === 'EMPATE') return t;
+  if (/\bgana o empate\b|\bo\s+.+\s+gana\b/i.test(t)) return t;
+
+  const tip = normalizeTip(t);
+  if (tip === '1') return `${home} GANA`;
+  if (tip === 'X') return 'EMPATE';
+  if (tip === '2') return `${away} GANA`;
+
+  // Mercados modelo 1X2 (antes de dobles: "1X2" contiene "X2")
+  if (/^1x2\s*local\b/i.test(lower) || /^local\s*gana\b/i.test(lower)) {
+    return `${home} GANA`;
+  }
+  if (/^1x2\s*visit/i.test(lower) || /^visitante\s*gana\b/i.test(lower)) {
+    return `${away} GANA`;
+  }
+  if (/^1x2\s*empat/i.test(lower) || /^empate\b/i.test(lower) || /^draw\b/i.test(lower)) {
+    return 'EMPATE';
+  }
+
+  // Doble oportunidad (formas compactas)
+  const compact = t.replace(/\s/g, '');
+  if (/^(1x|x1)$/i.test(compact)) return `${home} GANA O EMPATE`;
+  if (/^(x2|2x)$/i.test(compact)) return `EMPATE O ${away} GANA`;
+  if (/^(12|21)$/i.test(compact)) return `${home} O ${away} GANA`;
+
+  // Hándicap / AH
+  if (/\bah\s*local\b|h[aá]ndicap\s*local|home\s*win/i.test(lower)) {
+    const ah = lower.match(/([+-]?\d+(?:[.,]\d+)?)/);
+    return ah ? `${home} GANA (hándicap ${ah[1]})` : `${home} GANA`;
+  }
+  if (/\bah\s*visit|h[aá]ndicap\s*visit|away\s*win/i.test(lower)) {
+    const ah = lower.match(/([+-]?\d+(?:[.,]\d+)?)/);
+    return ah ? `${away} GANA (hándicap ${ah[1]})` : `${away} GANA`;
+  }
+
+  // Marcador exacto 2-1
+  if (/^\d{1,2}\s*[-–:]\s*\d{1,2}$/.test(t)) {
+    return `Marcador exacto ${t.replace(/[–:]/, '-')}`;
+  }
+
+  if (/btts\s*(s[ií]|yes)|ambos\s*marcan\s*s[ií]/i.test(lower)) return 'Ambos marcan: SÍ';
+  if (/btts\s*(no|n)|ambos\s*marcan\s*no/i.test(lower)) return 'Ambos marcan: NO';
+
+  return formatMarketLabel(pick, line);
+}
+
+/** Familia de mercado para compatibilidad en huecos same-match. */
+export function marketFamily(market: string): string {
+  const l = market.toLowerCase();
+  if (/btts.*s[ií]|ambos\s*marcan:\s*s[ií]|btts\s*yes/i.test(l)) return 'btts_yes';
+  if (/btts.*no|ambos\s*marcan:\s*no/i.test(l)) return 'btts_no';
+  if (/\+|over|m[aá]s\s*de/i.test(l) && /gol/i.test(l)) return 'over';
+  if (/-|under|menos\s*de/i.test(l) && /gol/i.test(l)) return 'under';
+  if (/empat|draw/i.test(l) && !/gana o empate|o empate/i.test(l)) return 'draw';
+  if (/visit|away/i.test(l) && /gana/i.test(l)) return 'away';
+  if (/local|home/i.test(l) && /gana/i.test(l)) return 'home';
+  if (/1x2\s*visit|ah\s*visit/i.test(l)) return 'away';
+  if (/1x2\s*local|ah\s*local/i.test(l)) return 'home';
+  if (/1x2\s*empat/i.test(l)) return 'draw';
+  const tip = normalizeTip(market);
+  if (tip === '1') return 'home';
+  if (tip === 'X') return 'draw';
+  if (tip === '2') return 'away';
+  return `other:${l.slice(0, 24)}`;
+}
+
+/** True si dos mercados del mismo partido pueden ir juntos en una combinada (SGP). */
+export function areMarketsCompatible(a: string, b: string): boolean {
+  const fa = marketFamily(a);
+  const fb = marketFamily(b);
+  if (fa === fb) return false;
+  const pair = [fa, fb].sort().join('|');
+  const exclusive = new Set([
+    'away|home',
+    'draw|home',
+    'away|draw',
+    'over|under',
+    'btts_no|btts_yes',
+  ]);
+  return !exclusive.has(pair);
 }
 
 /**
@@ -159,4 +262,66 @@ export function extractScoreFromText(text: string | null | undefined): string | 
   const b = Number(m[2]);
   if (a > 20 || b > 20) return null;
   return `${a}-${b}`;
+}
+
+const TIME_CELL = /^(\d{1,2}:\d{2})(?::\d{2})?$/;
+
+function splitVs(text: string): { home: string; away: string } | null {
+  const normalized = text
+    .replace(/\s+[vV][sS]\.?\s+/g, ' vs ')
+    .replace(/\s+[vV]\s+/g, ' vs ');
+  if (!/\svs\s/i.test(normalized)) return null;
+  const parts = normalized.split(/\svs\s/i).map((p) => p.trim()).filter(Boolean);
+  if (parts.length !== 2) return null;
+  if (TIME_CELL.test(parts[0]) || TIME_CELL.test(parts[1])) return null;
+  return { home: parts[0], away: parts[1] };
+}
+
+/**
+ * Corrige filas SaferTip: Local=hora, Visitante="A Vs B".
+ */
+export function repairMisparsedMatch(input: {
+  homeTeam: string;
+  awayTeam: string;
+  kickoff?: string | null;
+  league?: string;
+}): { homeTeam: string; awayTeam: string; kickoff: string | null; repaired: boolean } {
+  let home = input.homeTeam.trim();
+  let away = input.awayTeam.trim();
+  let kickoff = input.kickoff?.trim() || null;
+  let repaired = false;
+
+  // Caso 1: home es hora y away trae "A Vs B"
+  if (TIME_CELL.test(home)) {
+    const split = splitVs(away);
+    if (split) {
+      if (!kickoff) kickoff = home.match(TIME_CELL)?.[1] ?? home;
+      home = split.home;
+      away = split.away;
+      repaired = true;
+    }
+  }
+
+  // Caso 2: home contiene "vs" completo y away es basura/corto
+  if (!repaired) {
+    const splitHome = splitVs(home);
+    if (splitHome && (away.length < 3 || TIME_CELL.test(away) || /^(tbd|n\/?a)$/i.test(away))) {
+      home = splitHome.home;
+      away = splitHome.away;
+      repaired = true;
+    }
+  }
+
+  // Caso 3: away contiene vs y home no parece equipo (muy corto o numérico)
+  if (!repaired) {
+    const splitAway = splitVs(away);
+    if (splitAway && (TIME_CELL.test(home) || home.length < 3)) {
+      if (TIME_CELL.test(home) && !kickoff) kickoff = home.match(TIME_CELL)?.[1] ?? home;
+      home = splitAway.home;
+      away = splitAway.away;
+      repaired = true;
+    }
+  }
+
+  return { homeTeam: home, awayTeam: away, kickoff, repaired };
 }
