@@ -610,71 +610,63 @@ export default function MatchAnalysisDashboard({
             </Box>
           )}
 
-          <Box sx={{ overflowX: 'auto' }}>
+          <Box>
             <Typography fontWeight={700} gutterBottom>
-              Mercados
+              Mejores apuestas
             </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Mercado</TableCell>
-                  <TableCell>Cuota</TableCell>
-                  <TableCell>Prob</TableCell>
-                  <TableCell>Edge</TableCell>
-                  <TableCell>Origen</TableCell>
-                  <TableCell>Veredicto</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {payload.markets.slice(0, 16).map((row, i) => {
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: '1fr 1fr',
+                },
+                gap: 1.5,
+              }}
+            >
+              {[...payload.markets]
+                .sort((a, b) => b.aiProb - a.aiProb || b.edge - a.edge)
+                .slice(0, 4)
+                .map((row, i) => {
                   const parts = row.market.split(' · ');
-                  const matchPart = parts.length > 1 ? parts[0] : null;
                   const pickPart = parts.length > 1 ? parts.slice(1).join(' · ') : row.market;
                   return (
-                    <TableRow key={`${row.market}-${i}`}>
-                      <TableCell>
-                        {matchPart ? (
-                          <>
-                            <Typography component="span" fontWeight={800} variant="body2">
-                              {matchPart}
-                            </Typography>
-                            <Typography component="span" variant="body2" color="text.secondary">
-                              {' · '}
-                              {pickPart}
-                            </Typography>
-                          </>
-                        ) : (
-                          pickPart
-                        )}
-                      </TableCell>
-                      <TableCell>{row.odds.toFixed(2)}</TableCell>
-                      <TableCell>{row.aiProb}%</TableCell>
-                      <TableCell>{(row.edge * 100).toFixed(1)}%</TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={
-                            row.source === 'book'
-                              ? 'casa'
-                              : row.source === 'implied'
-                                ? 'implícita'
-                                : row.source
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={row.verdict}
-                          color={verdictColor[row.verdict] ?? 'default'}
-                        />
-                      </TableCell>
-                    </TableRow>
+                    <Box
+                      key={`${row.market}-${i}`}
+                      sx={{
+                        p: 1.75,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        bgcolor: 'grey.50',
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        fontWeight={700}
+                        color="text.secondary"
+                        sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}
+                      >
+                        {pickPart}
+                      </Typography>
+                      <Stack direction="row" alignItems="baseline" spacing={1} mt={0.5}>
+                        <Typography variant="h4" fontWeight={800} color="primary.main">
+                          {Math.round(row.aiProb)}%
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          cuota {row.odds.toFixed(2)}
+                        </Typography>
+                      </Stack>
+                      <Chip
+                        size="small"
+                        sx={{ mt: 1 }}
+                        label={row.verdict}
+                        color={verdictColor[row.verdict] ?? 'default'}
+                      />
+                    </Box>
                   );
                 })}
-              </TableBody>
-            </Table>
+            </Box>
           </Box>
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>

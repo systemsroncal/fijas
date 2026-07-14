@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -9,11 +9,6 @@ import {
   CircularProgress,
   LinearProgress,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material';
 import { apiUrl } from '@/lib/paths';
@@ -23,7 +18,7 @@ const phaseLabel: Record<MatchStatusPayload['phase'], string> = {
   scheduled: 'Programado',
   live: 'EN VIVO',
   finished: 'Finalizado',
-  unknown: 'Estado desconocido',
+  unknown: '—',
 };
 
 const phaseColor: Record<
@@ -36,8 +31,118 @@ const phaseColor: Record<
   unknown: 'warning',
 };
 
+/** Solo estas métricas (orden), estilo infografía — no la tabla completa. */
+const FOCUS_STATS = [
+  /posesi[oó]n|possession/i,
+  /tiros a puerta|shots on/i,
+  /tiros totales|total shots/i,
+  /c[oó]rners|corner/i,
+  /faltas|fouls/i,
+  /amarillas|yellow/i,
+  /rojas|red card/i,
+  /xG|goles esperados|expected goals/i,
+];
+
+function pickFocusStats(stats: MatchStatusPayload['stats']) {
+  const out: MatchStatusPayload['stats'] = [];
+  for (const re of FOCUS_STATS) {
+    const hit = stats.find((s) => re.test(s.name) || (s.key ? re.test(s.key) : false));
+    if (hit && !out.some((x) => x.name === hit.name)) out.push(hit);
+  }
+  // Si faltan, rellenar con las primeras no vacías
+  if (out.length < 4) {
+    for (const s of stats) {
+      if (out.length >= 6) break;
+      if (out.some((x) => x.name === s.name)) continue;
+      if (s.home === '' && s.away === '') continue;
+      out.push(s);
+    }
+  }
+  return out.slice(0, 6);
+}
+
+function parseStatNum(v: string): number {
+  const n = Number(String(v).replace('%', '').replace(',', '.').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function StatCompareRow({
+  label,
+  home,
+  away,
+}: {
+  label: string;
+  home: string;
+  away: string;
+}) {
+  const h = parseStatNum(home);
+  const a = parseStatNum(away);
+  const max = Math.max(h, a, 1);
+  const homePct = Math.round((h / max) * 100);
+  const awayPct = Math.round((a / max) * 100);
+  const isPct = String(home).includes('%') || String(away).includes('%');
+
+  return (
+    <Box py={0.75}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+        <Typography
+          variant="body2"
+          fontWeight={700}
+          color="primary.main"
+          sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 40 }}
+        >
+          {home || '—'}
+          {isPct && home && !String(home).includes('%') ? '%' : ''}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" fontWeight={600} textAlign="center">
+          {label}
+        </Typography>
+        <Typography
+          variant="body2"
+          fontWeight={700}
+          color="error.main"
+          textAlign="right"
+          sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 40 }}
+        >
+          {away || '—'}
+          {isPct && away && !String(away).includes('%') ? '%' : ''}
+        </Typography>
+      </Stack>
+      <Stack direction="row" spacing={0.75} alignItems="center">
+        <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+          <Box
+            sx={{
+              height: 8,
+              width: `${homePct}%`,
+              minWidth: h > 0 ? 6 : 0,
+              maxWidth: '100%',
+              borderRadius: 1,
+              bgcolor: 'primary.main',
+              opacity: 0.85,
+            }}
+          />
+        </Box>
+        <Box sx={{ width: 4 }} />
+        <Box sx={{ flex: 1 }}>
+          <Box
+            sx={{
+              height: 8,
+              width: `${awayPct}%`,
+              minWidth: a > 0 ? 6 : 0,
+              maxWidth: '100%',
+              borderRadius: 1,
+              bgcolor: 'error.main',
+              opacity: 0.85,
+            }}
+          />
+        </Box>
+      </Stack>
+    </Box>
+  );
+}
+
 /**
- * Marcador + estadísticas (live o FT) vía TheSportsDB free.
+ * Marcador + estadísticas simplificadas (estilo infografía).
  * Auto-refresh cada 25s si está en vivo.
  */
 export default function MatchResultStatsPanel({
@@ -69,7 +174,7 @@ export default function MatchResultStatsPanel({
     if (sport) params.set('sport', sport);
     if (date) params.set('date', date);
     params.set('details', '1');
-    params.set('_ts', String(Date.now())); // evitar caché del navegador
+    params.set('_ts', String(Date.now()));
 
     try {
       const res = await fetch(apiUrl(`/api/match-status?${params.toString()}`), {
@@ -99,12 +204,24 @@ export default function MatchResultStatsPanel({
     return () => window.clearInterval(id);
   }, [status?.phase, load]);
 
+  const focusStats = useMemo(
+    () => (status ? pickFocusStats(status.stats) : []),
+    [status]
+  );
+
+  const keyEvents = useMemo(() => {
+    if (!status) return [];
+    return status.timeline
+      .filter((t) => /gol|tarjeta|penalti|var/i.test(`${t.type} ${t.detail}`))
+      .slice(0, 8);
+  }, [status]);
+
   if (loading && !status) {
     return (
       <Box py={2} textAlign="center">
         <CircularProgress size={28} />
         <Typography variant="caption" display="block" color="text.secondary" mt={1}>
-          Cargando marcador y estadísticas…
+          Cargando estadísticas…
         </Typography>
       </Box>
     );
@@ -127,129 +244,158 @@ export default function MatchResultStatsPanel({
 
   if (!status) return null;
 
+  const home = status.homeTeam ?? homeTeam ?? 'Local';
+  const away = status.awayTeam ?? awayTeam ?? 'Visitante';
+
   return (
     <Box
       sx={{
-        p: 2,
+        p: { xs: 2, md: 2.5 },
         borderRadius: 2,
         border: '1px solid',
         borderColor: status.phase === 'live' ? 'error.light' : 'divider',
-        bgcolor: status.phase === 'live' ? 'action.hover' : 'grey.50',
+        bgcolor: 'background.paper',
       }}
     >
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" mb={1.5}>
-        <Typography fontWeight={700}>
-          {status.phase === 'live' ? 'Resultado en vivo' : 'Resultado y estadísticas'}
-        </Typography>
-        <Chip size="small" color={phaseColor[status.phase]} label={phaseLabel[status.phase]} />
-        {(status.statusLabel || status.status) && (
-          <Chip size="small" variant="outlined" label={status.statusLabel || status.status} />
-        )}
-        {status.progress && <Chip size="small" variant="outlined" label={status.progress} />}
-        {status.kickoffPeru && (
-          <Chip
-            size="small"
-            variant="outlined"
-            label={`Saque ${status.kickoffPeru} (PE)`}
-          />
-        )}
-        {status.scoreFromTimeline && (
-          <Chip size="small" color="info" variant="outlined" label="Marcador desde goles" />
-        )}
-        <Button size="small" onClick={() => void load()} disabled={loading}>
-          Actualizar
-        </Button>
-      </Stack>
-
+      {/* Cabecera tipo infografía */}
       <Stack
         direction="row"
-        spacing={2}
-        alignItems="center"
-        justifyContent="center"
+        justifyContent="space-between"
+        alignItems="flex-start"
         mb={2}
         flexWrap="wrap"
+        gap={1}
       >
-        <Typography fontWeight={700} textAlign="right" sx={{ minWidth: 100 }}>
-          {status.homeTeam ?? homeTeam ?? 'Local'}
-        </Typography>
-        <Typography
-          variant="h4"
-          fontWeight={800}
-          sx={{ fontVariantNumeric: 'tabular-nums', minWidth: 90, textAlign: 'center' }}
-        >
-          {status.score ? status.score.replace('-', ' - ') : '— : —'}
-        </Typography>
-        <Typography fontWeight={700} sx={{ minWidth: 100 }}>
-          {status.awayTeam ?? awayTeam ?? 'Visitante'}
-        </Typography>
+        <Box>
+          <Typography
+            variant="overline"
+            color="text.secondary"
+            sx={{ letterSpacing: '0.06em', fontWeight: 700 }}
+          >
+            {status.league || 'Partido'}
+            {status.phase === 'live' ? ' · EN VIVO' : ''}
+          </Typography>
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={1.5}
+            flexWrap="wrap"
+            useFlexGap
+          >
+            <Typography variant="h6" fontWeight={800} sx={{ textWrap: 'balance' }}>
+              {home}
+            </Typography>
+            <Typography
+              variant="h5"
+              fontWeight={800}
+              sx={{ fontVariantNumeric: 'tabular-nums', color: 'text.primary' }}
+            >
+              {status.score ? status.score.replace('-', ' – ') : 'vs'}
+            </Typography>
+            <Typography variant="h6" fontWeight={800} sx={{ textWrap: 'balance' }}>
+              {away}
+            </Typography>
+          </Stack>
+        </Box>
+        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Chip size="small" color={phaseColor[status.phase]} label={phaseLabel[status.phase]} />
+          {status.progress && (
+            <Chip size="small" variant="outlined" label={status.progress} />
+          )}
+          <Button size="small" onClick={() => void load()} disabled={loading}>
+            Actualizar
+          </Button>
+        </Stack>
+      </Stack>
+
+      {/* Meta: hora / sede */}
+      <Stack
+        direction="row"
+        flexWrap="wrap"
+        useFlexGap
+        spacing={1}
+        sx={{
+          mb: 2,
+          px: 1.5,
+          py: 1,
+          borderRadius: 1.5,
+          bgcolor: 'grey.100',
+        }}
+      >
+        {status.kickoffPeru && (
+          <Typography variant="caption" fontWeight={600}>
+            Saque {status.kickoffPeru} (PE)
+          </Typography>
+        )}
+        {status.date && (
+          <Typography variant="caption" color="text.secondary">
+            {status.date}
+          </Typography>
+        )}
+        {status.venue && (
+          <Typography variant="caption" color="text.secondary">
+            {status.venue}
+          </Typography>
+        )}
+        {(status.statusLabel || status.status) && status.phase !== 'scheduled' && (
+          <Typography variant="caption" color="text.secondary">
+            {status.statusLabel || status.status}
+          </Typography>
+        )}
       </Stack>
 
       {status.phase === 'live' && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
 
-      {status.label && (
-        <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-          {status.label}
-          {status.league ? ` · ${status.league}` : ''}
-          {status.venue ? ` · ${status.venue}` : ''}
+      {/* Comparativa simplificada */}
+      {focusStats.length > 0 ? (
+        <Box mb={2}>
+          <Stack direction="row" justifyContent="space-between" mb={1}>
+            <Typography variant="caption" fontWeight={800} color="primary.main">
+              {home.length > 18 ? `${home.slice(0, 16)}…` : home}
+            </Typography>
+            <Typography variant="caption" fontWeight={700} color="text.secondary">
+              ESTADÍSTICAS
+            </Typography>
+            <Typography variant="caption" fontWeight={800} color="error.main">
+              {away.length > 18 ? `${away.slice(0, 16)}…` : away}
+            </Typography>
+          </Stack>
+          {focusStats.map((s) => (
+            <StatCompareRow
+              key={s.key ?? s.name}
+              label={s.name}
+              home={s.home}
+              away={s.away}
+            />
+          ))}
+        </Box>
+      ) : status.phase === 'scheduled' ? (
+        <Alert severity="info" variant="outlined" sx={{ mb: 1 }}>
+          Aún no hay estadísticas. Se actualizarán en vivo o al finalizar.
+        </Alert>
+      ) : (
+        <Typography variant="body2" color="text.secondary" mb={2}>
+          Sin estadísticas detalladas en TheSportsDB para este partido.
         </Typography>
       )}
 
-      {status.stats.length > 0 && (
-        <Box mb={2}>
-          <Typography fontWeight={700} gutterBottom variant="body2">
-            Estadísticas
-          </Typography>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Local</TableCell>
-                <TableCell align="center">Métrica</TableCell>
-                <TableCell align="right">Visitante</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {status.stats.slice(0, 18).map((s) => (
-                <TableRow key={s.key ?? s.name} hover>
-                  <TableCell>{s.home}</TableCell>
-                  <TableCell align="center">{s.name}</TableCell>
-                  <TableCell align="right">{s.away}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Box>
-      )}
-
-      {status.timeline.length > 0 && (
+      {/* Cronología corta: solo goles / tarjetas */}
+      {keyEvents.length > 0 && (
         <Box>
-          <Typography fontWeight={700} gutterBottom variant="body2">
-            Cronología en tiempo real
+          <Typography variant="caption" fontWeight={700} color="text.secondary" display="block" mb={1}>
+            MOMENTOS CLAVE
           </Typography>
-          <Stack spacing={0.75}>
-            {status.timeline.slice(0, 24).map((t, i) => (
-              <Typography key={`${t.minute}-${t.player}-${i}`} variant="body2">
-                <strong>{t.minute}&apos;</strong> {t.type}
-                {t.detail ? ` · ${t.detail}` : ''}
-                {t.player ? ` — ${t.player}` : ''}
-                {t.assist ? ` (asist. ${t.assist})` : ''}
-                {t.team ? ` [${t.team}]` : ''}
-              </Typography>
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.75}>
+            {keyEvents.map((t, i) => (
+              <Chip
+                key={`${t.minute}-${t.player}-${i}`}
+                size="small"
+                variant="outlined"
+                label={`${t.minute}' ${t.type}${t.player ? ` · ${t.player}` : ''}`}
+              />
             ))}
           </Stack>
         </Box>
-      )}
-
-      {status.phase === 'scheduled' && (
-        <Alert severity="info" variant="outlined" sx={{ mt: 1 }}>
-          Aún no hay marcador. Cuando pase a live o final, se actualizará solo (o pulsa Actualizar).
-        </Alert>
-      )}
-
-      {status.notes.length > 0 && status.phase !== 'scheduled' && (
-        <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-          {status.notes.slice(0, 3).join(' · ')} · TheSportsDB free ·{' '}
-          {new Date(status.fetchedAt).toLocaleTimeString()}
-        </Typography>
       )}
     </Box>
   );
