@@ -233,14 +233,17 @@ export default function MatchAnalysisDashboard({
         </Alert>
       )}
 
-      <MatchResultStatsPanel
-        matchId={m?.id}
-        eventId={payload.sportsDb?.matchedEvent?.id}
-        homeTeam={m?.homeTeam}
-        awayTeam={m?.awayTeam}
-        sport={m?.sport}
-        date={payload.sportsDb?.matchedEvent?.date}
-      />
+      {/* Fuera del ref de export: no entra en el PNG */}
+      <Box data-export-ignore="1">
+        <MatchResultStatsPanel
+          matchId={m?.id}
+          eventId={payload.sportsDb?.matchedEvent?.id}
+          homeTeam={m?.homeTeam}
+          awayTeam={m?.awayTeam}
+          sport={m?.sport}
+          date={payload.sportsDb?.matchedEvent?.date}
+        />
+      </Box>
 
       <Box
         ref={ref}
@@ -355,7 +358,8 @@ export default function MatchAnalysisDashboard({
               Probabilidades (modelo Poisson)
             </Typography>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="stretch">
-              <Box sx={{ flex: 1, minHeight: 260 }}>
+              {/* Charts Apex fuera del PNG (data-export-ignore); las barras sí se exportan */}
+              <Box sx={{ flex: 1, minHeight: 260 }} data-export-ignore="1">
                 <Chart options={donutOptions} series={donutSeries} type="donut" height={260} width="100%" />
               </Box>
               <Box sx={{ flex: 1 }}>
@@ -393,7 +397,7 @@ export default function MatchAnalysisDashboard({
           </Box>
 
           {edgeMarkets.length > 0 && (
-            <Box>
+            <Box data-export-ignore="1">
               <Typography fontWeight={700} gutterBottom>
                 Gráfica de mercados (probabilidad modelo)
               </Typography>
