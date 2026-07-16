@@ -105,10 +105,49 @@ export function categoriesCompatible(
 }
 
 /**
+ * Clubes distintos que comparten ciudad o token parcial (p. ej. CFR Cluj ≠ U. Cluj).
+ */
+export function areDistinctClubs(a: string, b: string): boolean {
+  if (!a?.trim() || !b?.trim()) return false;
+  const ca = stripClubNoise(a);
+  const cb = stripClubNoise(b);
+  if (ca === cb) return false;
+
+  const isCfrCluj = (s: string) => /\bcfr\b/.test(s) && /\bcluj\b/.test(s);
+  const isUniCluj = (s: string, raw: string) => {
+    if (!/\bcluj\b/.test(s) || /\bcfr\b/.test(s)) return false;
+    const folded = foldText(raw);
+    return (
+      s === 'u cluj' ||
+      /\buniversitatea\b/.test(folded) ||
+      /^u[\s.]/.test(folded.trim()) ||
+      (s.split(' ').includes('u') && !s.includes('cfr'))
+    );
+  };
+
+  if (
+    (isCfrCluj(ca) && isUniCluj(cb, b)) ||
+    (isCfrCluj(cb) && isUniCluj(ca, a))
+  ) {
+    return true;
+  }
+
+  const ta = ca.split(' ').filter((t) => t.length > 1);
+  const tb = cb.split(' ').filter((t) => t.length > 1);
+  const AMBIGUOUS_CITY_TOKENS = new Set(['cluj', 'istanbul', 'manchester', 'liverpool', 'london']);
+  if (ta.length === 1 && tb.length >= 2 && AMBIGUOUS_CITY_TOKENS.has(ta[0])) return true;
+  if (tb.length === 1 && ta.length >= 2 && AMBIGUOUS_CITY_TOKENS.has(tb[0])) return true;
+
+  return false;
+}
+
+/**
  * ¿Mismo club pese a alias de plataforma? (Astana ≈ FC Astana, Dinamo ≈ Dinamo City)
  * Evita cruces tipo Real Madrid vs Real Sociedad.
  */
 export function sameTeamIdentity(a: string, b: string): boolean {
+  if (areDistinctClubs(a, b)) return false;
+
   const ca = stripClubNoise(a);
   const cb = stripClubNoise(b);
   if (!ca || !cb) return false;
@@ -152,7 +191,17 @@ export function teamNameSearchVariants(name: string): string[] {
     .join(' ');
   return Array.from(
     new Set(
-      [raw, stripped, titled, `FC ${titled}`, `${titled} FC`, `CF ${titled}`]
+      [
+        raw,
+        stripped,
+        titled,
+        `FC ${titled}`,
+        `${titled} FC`,
+        `CF ${titled}`,
+        ...( /\b(u\.?\s*cluj|universitatea\s+cluj)\b/i.test(raw)
+          ? ['Universitatea Cluj', 'FC Universitatea Cluj', 'U Cluj']
+          : []),
+      ]
         .map((s) => s.trim())
         .filter((s) => s.length >= 3)
     )
@@ -171,6 +220,28 @@ export function isOutlierFootballScore(score: string | null | undefined): boolea
   const max = Math.max(a, b);
   // 18-0, 12-1, etc.
   return max >= 12 || total >= 15;
+}
+
+/** Goleadas unilaterales improbables en 1ª (5-0, 6-0…) — suele ser scrape erróneo. */
+export function isImplausibleSeniorScore(score: string | null | undefined): boolean {
+  if (!score || isOutlierFootballScore(score)) return false;
+  const m = String(score).trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (Number.isNaN(a) || Number.isNaN(b)) return false;
+  const max = Math.max(a, b);
+  const min = Math.min(a, b);
+  return max >= 5 && max - min >= 5 && min <= 1;
+}
+
+function scoreReliability(score: string | null | undefined): number {
+  if (!score) return 0;
+  if (isOutlierFootballScore(score)) return -100;
+  if (isImplausibleSeniorScore(score)) return -50;
+  const parts = score.split('-').map(Number);
+  if (parts.some(Number.isNaN)) return 0;
+  return 10 - Math.abs(parts[0] - parts[1]);
 }
 
 function parseLabelTeams(label: string): { home: string; away: string } | null {
@@ -238,8 +309,14 @@ function pickBetterDuplicate(
     if (candVotes > keptVotes) winner = candidate;
     else if (candVotes < keptVotes) winner = kept;
     else {
-      // Empate: fecha más temprana (evita scrape +1 día con marcador inventado)
-      winner = (candidate.date || '') < (kept.date || '') ? candidate : kept;
+      // Empate votos: preferir marcador más fiable (menos goleada unilateral)
+      const keptRel = scoreReliability(kept.score);
+      const candRel = scoreReliability(candidate.score);
+      if (candRel > keptRel) winner = candidate;
+      else if (candRel < keptRel) winner = kept;
+      else {
+        winner = (candidate.date || '') < (kept.date || '') ? candidate : kept;
+      }
     }
   } else if ((candidate.date || '') < (kept.date || '')) {
     winner = candidate;
@@ -259,8 +336,8 @@ function pickBetterDuplicate(
 
 function rowQuality(row: FormMatchRow): number {
   let q = 0;
-  if (row.score && !isOutlierFootballScore(row.score)) q += 20;
-  if (row.score && isOutlierFootballScore(row.score)) q -= 40;
+  if (row.score && !isOutlierFootballScore(row.score) && !isImplausibleSeniorScore(row.score)) q += 20;
+  if (row.score && (isOutlierFootballScore(row.score) || isImplausibleSeniorScore(row.score))) q -= 40;
   if (row.tip) q += 2;
   if (/\b(fc|cf|afc)\b/i.test(row.label)) q += 1;
   return q;
@@ -282,6 +359,7 @@ export function filterRowsSameCategory(
     const cat = detectMatchCategory(teams.home, teams.away, league);
     if (!categoriesCompatible(target, cat)) return false;
     if (isOutlierFootballScore(row.score) && target === 'senior_men') return false;
+    if (isImplausibleSeniorScore(row.score) && target === 'senior_men') return false;
 
     const involvesHome =
       sameTeamIdentity(homeTeam, teams.home) || sameTeamIdentity(homeTeam, teams.away);

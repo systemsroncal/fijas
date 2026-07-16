@@ -31,6 +31,7 @@ import { ANALYSIS_EXTERNAL_SOURCES } from '@/lib/ai/external-sources';
 import { mqPublish } from '@/lib/mq/bus';
 import {
   isH2HPair,
+  isImplausibleSeniorScore,
   isOutlierFootballScore,
   matchInvolvesTeam,
   sanitizeFormRows,
@@ -251,6 +252,7 @@ async function loadTeamForm(
     const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
     const score = extractScoreFromText(note) ?? extractScoreFromText(m.kickoff);
     if (isOutlierFootballScore(score)) continue;
+    if (isImplausibleSeniorScore(score)) continue;
     const tip = m.predictions[0]?.betChoice ?? null;
     const row: FormMatchRow = {
       matchId: m.id,

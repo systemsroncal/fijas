@@ -8,6 +8,8 @@
  * Ejemplos: https://www.thesportsdb.com/docs_api_examples
  */
 
+import { areDistinctClubs } from '@/lib/team-identity';
+
 const BASE = 'https://www.thesportsdb.com/api/v1/json';
 
 type CacheEntry = { at: number; data: unknown };
@@ -187,9 +189,13 @@ export async function searchTeam(name: string): Promise<SportsDbTeam | null> {
   const teams = data?.teams ?? [];
   if (!teams.length) return null;
   return (
-    [...teams].sort(
-      (a, b) => teamNameSimilarity(name, b.strTeam) - teamNameSimilarity(name, a.strTeam)
-    )[0] ?? null
+    [...teams].sort((a, b) => {
+      const scoreA =
+        teamNameSimilarity(name, a.strTeam) + (areDistinctClubs(name, a.strTeam) ? -0.6 : 0);
+      const scoreB =
+        teamNameSimilarity(name, b.strTeam) + (areDistinctClubs(name, b.strTeam) ? -0.6 : 0);
+      return scoreB - scoreA;
+    })[0] ?? null
   );
 }
 

@@ -23,7 +23,9 @@ import {
 } from '@/lib/sportsdb/client';
 import { localDateISO } from '@/lib/local-date';
 import {
+  areDistinctClubs,
   detectTeamCategory,
+  isImplausibleSeniorScore,
   isOutlierFootballScore,
   sanitizeFormRows,
 } from '@/lib/team-identity';
@@ -76,6 +78,7 @@ function mapLastEvents(
       if (target !== 'senior_men' && cat !== target && cat !== 'unknown') return false;
       const score = eventScore(ev);
       if (isOutlierFootballScore(score)) return false;
+      if (isImplausibleSeniorScore(score)) return false;
       return true;
     })
     .slice(0, 5)
