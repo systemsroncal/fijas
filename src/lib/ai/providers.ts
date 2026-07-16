@@ -56,7 +56,8 @@ export const AI_PROVIDERS: {
     label: 'NVIDIA',
     helpSteps: [
       'Ve a https://build.nvidia.com/',
-      'Genera una API key de NVIDIA NIM',
+      'Genera una API key de NVIDIA NIM (Free Endpoint)',
+      'La app prueba en cascada: deepseek-v4-flash → Gemma → Nemotron → Mistral → Llama',
       'Copia y guarda la clave',
     ],
   },
@@ -142,10 +143,10 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
   NVIDIA: {
     ...OPENAI_COMPAT,
     url: 'https://integrate.api.nvidia.com/v1/chat/completions',
-    // Primary: 3.3-70b (el 3.1-8b suele estar DEGRADED en NIM free)
-    model: 'meta/llama-3.3-70b-instruct',
+    // Free Endpoint prioritario (NIM trial) — el resto se prueba en cascada
+    model: 'deepseek-ai/deepseek-v4-flash',
     buildBody: (messages) => ({
-      model: 'meta/llama-3.3-70b-instruct',
+      model: 'deepseek-ai/deepseek-v4-flash',
       messages,
       temperature: 0.3,
       max_tokens: 2048,
@@ -222,15 +223,45 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
   },
 };
 
-/** Modelos NIM de respaldo si el principal está DEGRADED (mismo proveedor NVIDIA). */
+/**
+ * Cascada NVIDIA NIM Free Endpoint (misma API key).
+ * Orden: velocidad/fiabilidad free → calidad → Llama de respaldo.
+ * Docs: https://build.nvidia.com / https://docs.api.nvidia.com/nim/reference/llm-apis
+ */
 const NVIDIA_MODEL_FALLBACKS = [
+  // 1) Free Endpoint prioritarios (rápidos / útiles para análisis)
+  'deepseek-ai/deepseek-v4-flash',
+  'google/gemma-4-31b-it',
+  'google/gemma-3-27b-it',
+  'google/gemma-2-9b-it',
+  'nvidia/nvidia-nemotron-nano-9b-v2',
+  'nvidia/llama-3.1-nemotron-nano-8b-v1',
+  'mistralai/mistral-small-3.1-24b-instruct-2503',
+  'mistralai/mistral-medium-3.1-24b-instruct-2503',
+  'microsoft/phi-4-mini-instruct',
+  // 2) Free más pesados (pueden ir lentos / DEGRADED)
+  'deepseek-ai/deepseek-v4-pro',
+  'google/gemma-2-27b-it',
   'meta/llama-3.3-70b-instruct',
+  // 3) Respaldo histórico NIM
   'meta/llama-3.1-70b-instruct',
   'meta/llama-3.2-3b-instruct',
-  'microsoft/phi-4-mini-instruct',
   'google/gemma-2-2b-it',
   'meta/llama-3.1-8b-instruct',
 ] as const;
+
+function isNvidiaRetryableError(status: number, body: string, message: string): boolean {
+  if (isNvidiaDegradedError(status, body)) return true;
+  if (status === 404 || status === 408 || status === 429 || status === 502 || status === 503) {
+    return true;
+  }
+  if (/model.*(not found|does not exist|unavailable)|DEGRADED|timeout|abort|no respondió|Too Many|rate.?limit/i.test(
+    `${body} ${message}`
+  )) {
+    return true;
+  }
+  return false;
+}
 
 /** Modelos Gemini con cuota a veces separada (mismo API key). */
 const GEMINI_MODEL_FALLBACKS = [
@@ -361,10 +392,11 @@ export async function callProvider(
       } catch (err) {
         const e = err as Error & { status?: number; body?: string };
         lastErr = e;
-        if (isNvidiaDegradedError(e.status ?? 0, e.body ?? e.message)) {
-          continue;
-        }
-        if (e.status === 404 || /model.*(not found|does not exist)/i.test(e.body ?? '')) {
+        const status = e.status ?? 0;
+        const body = e.body ?? '';
+        // Timeout / DEGRADED / 429 / modelo ausente → siguiente free endpoint
+        if (isNvidiaRetryableError(status, body, e.message)) {
+          console.warn(`[NVIDIA] ${model} falló → siguiente:`, e.message.slice(0, 120));
           continue;
         }
         throw e;
@@ -372,7 +404,7 @@ export async function callProvider(
     }
     throw new Error(
       lastErr?.message ??
-        'NVIDIA: todos los modelos NIM fallaron (DEGRADED). Prueba Gemini u otro proveedor, o reintenta más tarde.'
+        'NVIDIA: todos los Free Endpoints NIM fallaron. Prueba OpenRouter/Gemini u otro proveedor, o reintenta más tarde.'
     );
   }
 

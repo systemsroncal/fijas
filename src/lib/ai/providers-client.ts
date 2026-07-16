@@ -40,7 +40,8 @@ export const AI_HELP: Record<string, string[]> = {
   ],
   NVIDIA: [
     'Ve a https://build.nvidia.com/',
-    'Genera una API key de NVIDIA NIM',
+    'Genera una API key de NVIDIA NIM (Free Endpoint)',
+    'La app prueba en cascada: deepseek-v4-flash → Gemma → Nemotron → Mistral → Llama',
     'Copia y guarda la clave',
   ],
   CLAUDE: [
