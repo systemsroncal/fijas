@@ -468,8 +468,62 @@ function applyLlmJson(
 
 /**
  * LLM profundo con failover: preferido → otras keys activas → análisis neuronal (solo modelo).
+ * Nunca lanza por timeout de un proveedor: degradación controlada a neuronal.
  */
 export async function enrichPayloadWithLlm(
+  preferred: AiProvider,
+  keysByProvider: Partial<Record<AiProvider, string>>,
+  base: StructuredMatchPayload,
+  onProgress?: EnrichProgressFn
+): Promise<{
+  payload: StructuredMatchPayload;
+  raw: string;
+  providerUsed: AiProvider;
+  promptUsed: string;
+  neuralOnly: boolean;
+  attempts: AiAttemptLog[];
+}> {
+  try {
+    return await enrichPayloadWithLlmInner(
+      preferred,
+      keysByProvider,
+      base,
+      onProgress
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message.slice(0, 180) : 'error';
+    onProgress?.({
+      step: 'ai',
+      message: `Cascada IA abortada (${detail}) → neuronal`,
+      ok: false,
+      pct: 90,
+    });
+    const neural: StructuredMatchPayload = {
+      ...base,
+      deepAnalysis: true,
+      llmUsed: false,
+      llmProvider: null,
+      aiCascade: {
+        preferred,
+        used: 'NEURAL',
+        neuralOnly: true,
+        attempts: [{ provider: preferred, status: 'fail', detail }],
+      },
+      edgeSummary: `${base.edgeSummary}\n\n[Neuronal] Fallback forzado tras error de IA: ${detail}`,
+    };
+    neural.brief = buildAnalysisBrief(neural);
+    return {
+      payload: neural,
+      raw: JSON.stringify(neural),
+      providerUsed: preferred,
+      promptUsed: 'neural-model-only-forced',
+      neuralOnly: true,
+      attempts: neural.aiCascade!.attempts,
+    };
+  }
+}
+
+async function enrichPayloadWithLlmInner(
   preferred: AiProvider,
   keysByProvider: Partial<Record<AiProvider, string>>,
   base: StructuredMatchPayload,
@@ -558,7 +612,6 @@ export async function enrichPayloadWithLlm(
         pct: 92,
       });
       const payload = applyLlmJson(base, raw, provider, attempts);
-      // preferred en cascade
       if (payload.aiCascade) {
         payload.aiCascade.preferred = preferred;
       }

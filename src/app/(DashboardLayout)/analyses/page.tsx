@@ -109,6 +109,7 @@ export default function AnalysesPage() {
   const [activeAnalysis, setActiveAnalysis] = useState<Analysis | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressEvents, setProgressEvents] = useState<AnalysisProgressEvent[]>([]);
+  const [progressFailed, setProgressFailed] = useState(false);
 
   const pendingAccumulators = useMemo(
     () => accumulators.filter((a) => !a.isAnalyzed),
@@ -199,7 +200,16 @@ export default function AnalysesPage() {
     }
 
     setRunning(true);
-    setProgressEvents([]);
+    setProgressEvents([
+      {
+        type: 'progress',
+        step: 'boot',
+        message: `Iniciando deep scan · proveedor ${provider}`,
+        provider,
+        pct: 5,
+      },
+    ]);
+    setProgressFailed(false);
     setProgressOpen(true);
     if (override?.matchId) {
       setMode('MATCH');
@@ -222,29 +232,30 @@ export default function AnalysesPage() {
                 force,
               };
 
+    let failed = false;
     try {
       const res = await fetch(apiUrl('/api/analyses'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(180_000),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setProgressEvents((prev) => [
-          ...prev,
-          {
-            type: 'error',
-            message:
-              typeof data.error === 'string'
-                ? data.error
-                : `Análisis fallido (${res.status})`,
-          },
-        ]);
-        setError(
+        failed = true;
+        const errMsg =
           typeof data.error === 'string'
             ? data.error
-            : `Análisis fallido (${res.status}). Si elegiste Gemini, verifica la key en Ajustes.`
+            : `Análisis fallido (${res.status})`;
+        setProgressEvents((prev) => [
+          ...prev,
+          { type: 'error', message: errMsg, provider, pct: 100 },
+        ]);
+        setProgressFailed(true);
+        setError(
+          errMsg.includes('45s') || /no respondió/i.test(errMsg)
+            ? `${errMsg} — Si sigue fallando, prueba otro proveedor o deja que el failover llegue al modelo neuronal (redeploy con la rama actualizada).`
+            : errMsg
         );
         return;
       }
@@ -280,11 +291,14 @@ export default function AnalysesPage() {
         ...cascadeEvents,
         { type: 'done', message: 'Informe listo', pct: 100, payload: data.payload },
       ]);
+      setProgressFailed(false);
 
       const candidate = data.payload ?? data.analysis?.payload;
       if (isMatchDashboardPayload(candidate)) {
         setPayload(candidate);
       } else {
+        failed = true;
+        setProgressFailed(true);
         setError('El análisis no devolvió un dashboard estructurado.');
         setPayload(null);
       }
@@ -304,18 +318,23 @@ export default function AnalysesPage() {
 
       await refresh();
     } catch (err) {
+      failed = true;
       const msg = err instanceof Error ? err.message : 'Error de red al analizar';
-      setProgressEvents((prev) => [...prev, { type: 'error', message: msg }]);
+      setProgressEvents((prev) => [...prev, { type: 'error', message: msg, pct: 100 }]);
+      setProgressFailed(true);
       if (/abort|timeout/i.test(msg)) {
         setError(
-          'El análisis tardó más de 120s y se canceló. Prueba de nuevo o cambia de proveedor (NVIDIA suele ser más rápido).'
+          'El análisis tardó más de 180s y se canceló. Prueba otro proveedor o reintenta.'
         );
       } else {
         setError(msg);
       }
     } finally {
       setRunning(false);
-      window.setTimeout(() => setProgressOpen(false), 900);
+      // Éxito: cierra solo; error: el usuario cierra el popup
+      if (!failed) {
+        window.setTimeout(() => setProgressOpen(false), 1400);
+      }
     }
   };
 
@@ -387,6 +406,11 @@ export default function AnalysesPage() {
         provider={provider}
         events={progressEvents}
         running={running}
+        failed={progressFailed}
+        onClose={() => {
+          setProgressOpen(false);
+          setProgressFailed(false);
+        }}
       />
 
       <Card sx={{ mb: 2 }}>

@@ -1,7 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Dialog, DialogContent, LinearProgress, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Dialog,
+  DialogContent,
+  LinearProgress,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
 import { ANALYSIS_EXTERNAL_SOURCES } from '@/lib/ai/external-sources';
 import type { AnalysisProgressEvent } from '@/lib/ai/analysis-types';
@@ -18,6 +26,9 @@ type Props = {
   events: AnalysisProgressEvent[];
   /** true mientras el fetch sigue en curso */
   running: boolean;
+  /** true si el análisis falló (mantiene el popup abierto) */
+  failed?: boolean;
+  onClose?: () => void;
 };
 
 function MatrixRain({ active }: { active: boolean }) {
@@ -84,26 +95,36 @@ function MatrixRain({ active }: { active: boolean }) {
 /**
  * Popup tipo terminal / matrix mientras corre el análisis.
  */
-export default function AnalysisProgressDialog({ open, provider, events, running }: Props) {
+export default function AnalysisProgressDialog({
+  open,
+  provider,
+  events,
+  running,
+  failed,
+  onClose,
+}: Props) {
   const reduce = useReducedMotion();
   const [lines, setLines] = useState<Line[]>([]);
   const [sourceIdx, setSourceIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const bootRef = useRef(false);
+  const seenEvt = useRef(0);
 
   const pct = useMemo(() => {
     const last = [...events].reverse().find((e) => typeof e.pct === 'number');
-    if (last?.pct != null) return last.pct;
+    if (last?.pct != null) return Math.min(100, last.pct);
     if (!running && events.some((e) => e.type === 'done')) return 100;
+    if (failed) return Math.min(99, 40 + events.length * 3);
     const base = Math.min(55, sourceIdx * 3.2);
     return Math.min(92, base + events.length * 4);
-  }, [events, running, sourceIdx]);
+  }, [events, running, sourceIdx, failed]);
 
   useEffect(() => {
     if (!open) {
       setLines([]);
       setSourceIdx(0);
       bootRef.current = false;
+      seenEvt.current = 0;
       return;
     }
     if (bootRef.current) return;
@@ -116,8 +137,13 @@ export default function AnalysisProgressDialog({ open, provider, events, running
       },
       {
         id: 'boot2',
-        text: '› Inicializando canal seguro… obteniendo información de fuentes externas',
+        text: '› Canal seguro OK — obteniendo información de fuentes externas…',
         tone: 'info',
+      },
+      {
+        id: 'boot3',
+        text: `› IA preferida: ${provider} (failover → otras keys → neuronal)`,
+        tone: 'ai',
       },
     ]);
   }, [open, provider]);
@@ -142,43 +168,70 @@ export default function AnalysisProgressDialog({ open, provider, events, running
         },
       ]);
       setSourceIdx((i) => i + 1);
-    }, reduce ? 40 : 280 + Math.random() * 220);
+    }, reduce ? 40 : 220 + Math.random() * 180);
     return () => window.clearTimeout(t);
   }, [open, running, sourceIdx, reduce]);
 
-  // Eventos reales del servidor (IA failover, etc.)
+  // Heartbeat mientras espera IA (evita sensación de “congelado”)
   useEffect(() => {
-    if (!open || events.length === 0) return;
-    const e = events[events.length - 1];
-    const tone: Line['tone'] =
-      e.type === 'error' || e.ok === false
-        ? 'fail'
-        : e.provider || e.step === 'ai'
-          ? 'ai'
-          : e.ok === true
-            ? 'ok'
-            : 'info';
-    setLines((prev) => {
-      const id = `evt-${events.length}-${e.message.slice(0, 24)}`;
-      if (prev.some((l) => l.id === id)) return prev;
-      return [
+    if (!open || !running) return;
+    const tick = window.setInterval(() => {
+      setLines((prev) => [
         ...prev,
         {
-          id,
+          id: `hb-${Date.now()}`,
+          text: `… esperando respuesta de ${provider} / fuentes (failover activo)`,
+          tone: 'info',
+        },
+      ]);
+    }, 7000);
+    return () => window.clearInterval(tick);
+  }, [open, running, provider]);
+
+  // Eventos reales del servidor
+  useEffect(() => {
+    if (!open || events.length <= seenEvt.current) return;
+    const fresh = events.slice(seenEvt.current);
+    seenEvt.current = events.length;
+    setLines((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < fresh.length; i++) {
+        const e = fresh[i];
+        const tone: Line['tone'] =
+          e.type === 'error' || e.ok === false
+            ? 'fail'
+            : e.provider || e.step === 'ai'
+              ? 'ai'
+              : e.ok === true || e.type === 'done'
+                ? 'ok'
+                : 'info';
+        next.push({
+          id: `evt-${seenEvt.current - fresh.length + i}-${e.message.slice(0, 20)}`,
           text:
             e.provider != null
               ? `◉ IA ${e.provider}: ${e.message}`
               : `◉ ${e.message}`,
           tone,
-        },
-      ];
+        });
+      }
+      return next;
     });
   }, [events, open]);
 
   useEffect(() => {
     if (!open || running) return;
     setLines((prev) => {
-      if (prev.some((l) => l.id === 'done')) return prev;
+      if (prev.some((l) => l.id === 'done' || l.id === 'fail-end')) return prev;
+      if (failed) {
+        return [
+          ...prev,
+          {
+            id: 'fail-end',
+            text: '✖ Pipeline con error — revisa el log arriba. Puedes cerrar y reintentar.',
+            tone: 'fail',
+          },
+        ];
+      }
       return [
         ...prev,
         {
@@ -188,7 +241,7 @@ export default function AnalysisProgressDialog({ open, provider, events, running
         },
       ];
     });
-  }, [open, running]);
+  }, [open, running, failed]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
@@ -211,9 +264,24 @@ export default function AnalysisProgressDialog({ open, provider, events, running
     }
   };
 
+  const title = running
+    ? 'Obteniendo información de fuentes externas…'
+    : failed
+      ? 'Análisis incompleto'
+      : 'Análisis listo';
+
   return (
     <Dialog
       open={open}
+      onClose={(_, reason) => {
+        if (running) return;
+        if (reason === 'backdropClick' && !failed) {
+          onClose?.();
+          return;
+        }
+        onClose?.();
+      }}
+      disableEscapeKeyDown={running}
       maxWidth="md"
       fullWidth
       PaperProps={{
@@ -223,12 +291,14 @@ export default function AnalysisProgressDialog({ open, provider, events, running
           border: '1px solid rgba(34,197,94,0.35)',
           borderRadius: 2,
           overflow: 'hidden',
-          boxShadow: '0 0 40px rgba(16,185,129,0.18)',
+          boxShadow: '0 0 40px rgba(16,185,129,0.25)',
+          zIndex: 1400,
         },
       }}
+      sx={{ zIndex: 1400 }}
     >
-      <DialogContent sx={{ p: 0, position: 'relative', minHeight: 380 }}>
-        <MatrixRain active={open && running} />
+      <DialogContent sx={{ p: 0, position: 'relative', minHeight: 420 }}>
+        <MatrixRain active={open && (running || !failed)} />
         <Box sx={{ position: 'relative', zIndex: 1, p: 2.5 }}>
           <LazyMotion features={domAnimation}>
             <m.div
@@ -236,27 +306,54 @@ export default function AnalysisProgressDialog({ open, provider, events, running
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
+              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                <Box>
+                  <Typography
+                    variant="overline"
+                    sx={{ letterSpacing: 2, color: '#34D399', fontFamily: 'ui-monospace, monospace' }}
+                  >
+                    WPS · DEEP SCAN
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    fontWeight={700}
+                    sx={{ fontFamily: 'ui-monospace, monospace' }}
+                  >
+                    {title}
+                  </Typography>
+                </Box>
+                {!running && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => onClose?.()}
+                    sx={{
+                      borderColor: 'rgba(34,197,94,0.5)',
+                      color: '#7CFFB2',
+                      textTransform: 'none',
+                    }}
+                  >
+                    Cerrar
+                  </Button>
+                )}
+              </Stack>
               <Typography
-                variant="overline"
-                sx={{ letterSpacing: 2, color: '#34D399', fontFamily: 'ui-monospace, monospace' }}
+                variant="caption"
+                sx={{ color: '#94A3B8', display: 'block', mb: 1.5 }}
               >
-                WPS · DEEP SCAN
-              </Typography>
-              <Typography variant="h6" fontWeight={700} sx={{ mb: 1, fontFamily: 'ui-monospace, monospace' }}>
-                {running ? 'Obteniendo información de fuentes externas…' : 'Análisis listo'}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ color: '#94A3B8', display: 'block', mb: 1.5 }}>
-                Preferida: {provider} → si no responde, siguiente IA disponible → neuronal (solo modelo)
+                Preferida: {provider} → si no responde, siguiente IA → neuronal (solo modelo)
               </Typography>
               <LinearProgress
-                variant="determinate"
+                variant={running && pct < 8 ? 'indeterminate' : 'determinate'}
                 value={pct}
                 sx={{
                   mb: 2,
                   height: 6,
                   borderRadius: 1,
                   bgcolor: 'rgba(255,255,255,0.06)',
-                  '& .MuiLinearProgress-bar': { bgcolor: '#22C55E' },
+                  '& .MuiLinearProgress-bar': {
+                    bgcolor: failed ? '#FB7185' : '#22C55E',
+                  },
                 }}
               />
               <Box
@@ -264,11 +361,11 @@ export default function AnalysisProgressDialog({ open, provider, events, running
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
                   fontSize: 13,
                   lineHeight: 1.55,
-                  maxHeight: 280,
+                  maxHeight: 300,
                   overflow: 'auto',
                   p: 1.5,
                   borderRadius: 1,
-                  bgcolor: 'rgba(0,0,0,0.45)',
+                  bgcolor: 'rgba(0,0,0,0.55)',
                   border: '1px solid rgba(34,197,94,0.2)',
                 }}
               >
@@ -284,7 +381,10 @@ export default function AnalysisProgressDialog({ open, provider, events, running
                   </m.div>
                 ))}
                 {running && (
-                  <Box component="span" sx={{ color: '#7CFFB2', animation: 'blink 1s step-end infinite' }}>
+                  <Box
+                    component="span"
+                    sx={{ color: '#7CFFB2', animation: 'blink 1s step-end infinite' }}
+                  >
                     ▌
                   </Box>
                 )}

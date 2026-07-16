@@ -301,13 +301,13 @@ async function callOpenAiCompatOnce(
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(35_000),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/abort|timeout/i.test(msg)) {
       throw new Error(
-        `${provider} no respondió en 45s. Revisa la key, el modelo o inténtalo de nuevo.`
+        `${provider} no respondió en 35s. Revisa la key, el modelo o inténtalo de nuevo.`
       );
     }
     throw err;
