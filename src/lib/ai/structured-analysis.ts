@@ -7,7 +7,9 @@ import {
   expectedCornersCards,
   MatchContext,
   MarketEdge,
+  implied1x2FromCtx,
   predictMatch,
+  predictPoissonOnly,
   scanMatchEdges,
   topScorelines,
 } from '@/lib/ai/football-model';
@@ -210,7 +212,9 @@ export function buildModelPayload(
   extras?: { form?: TeamFormBlock; relatedMatches?: RelatedMatchRow[] }
 ): StructuredMatchPayload {
   const ctxWithForm = applyFormToMatchContext(ctx, extras?.form);
+  const probsPoisson = predictPoissonOnly(ctxWithForm);
   const probs = predictMatch(ctxWithForm);
+  const marketImplied = implied1x2FromCtx(ctxWithForm);
   const sport = detectSport(ctx.league);
   const coreEdges = scanMatchEdges(ctx, probs);
   const sportEdges = scanSportSpecificEdges(sport, ctx, probs);
@@ -220,7 +224,7 @@ export function buildModelPayload(
     ...coreEdges,
     ...sportEdges.filter((e) => !seenMarkets.has(e.market.toLowerCase())),
   ];
-  const scores = topScorelines(probs.lambdaHome, probs.lambdaAway, 4);
+  const scores = topScorelines(probsPoisson.lambdaHome, probsPoisson.lambdaAway, 8);
   const expectedRaw = expectedCornersCards(probs);
   const form = extras?.form ?? emptyForm();
   const finishedScore =
@@ -333,6 +337,16 @@ export function buildModelPayload(
 
   const bestEdge = [...edges].sort((a, b) => b.edge - a.edge)[0];
 
+  const probHome = pct(probs.home);
+  const probDraw = pct(probs.draw);
+  const probAway = pct(probs.away);
+  const favoriteSide: 'home' | 'draw' | 'away' =
+    probHome >= probDraw && probHome >= probAway
+      ? 'home'
+      : probAway >= probDraw
+        ? 'away'
+        : 'draw';
+
   const payload: StructuredMatchPayload = {
     mode,
     match: {
@@ -347,10 +361,27 @@ export function buildModelPayload(
       awayCrestUrl: null,
     },
     probs: {
-      home: pct(probs.home),
-      draw: pct(probs.draw),
-      away: pct(probs.away),
+      home: probHome,
+      draw: probDraw,
+      away: probAway,
     },
+    poissonProbs: {
+      home: pct(probsPoisson.home),
+      draw: pct(probsPoisson.draw),
+      away: pct(probsPoisson.away),
+    },
+    marketImplied: marketImplied
+      ? {
+          home: pct(marketImplied.home),
+          draw: pct(marketImplied.draw),
+          away: pct(marketImplied.away),
+        }
+      : null,
+    scorePredictions: scores.map((s) => ({
+      score: `${s.home}-${s.away}`,
+      prob: pct(s.prob),
+    })),
+    favoriteSide,
     scoreline: {
       mostLikely: finishedScore ?? `${scores[0].home}-${scores[0].away}`,
       alternatives: finishedScore

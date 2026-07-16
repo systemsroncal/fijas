@@ -37,6 +37,7 @@ import {
   type SportKind,
 } from '@/lib/match-display';
 import MatchResultStatsPanel from '@/components/analysis/MatchResultStatsPanel';
+import MatchPredictionPanel from '@/components/analysis/MatchPredictionPanel';
 import { proxiedMediaUrl } from '@/lib/media-proxy';
 import { exportNodeToPng } from '@/lib/export-png';
 
@@ -49,6 +50,26 @@ const verdictColor: Record<string, 'success' | 'warning' | 'error' | 'default' |
   avoid: 'error',
   neutral: 'default',
 };
+
+const accRiskBorder: Record<string, string> = {
+  safe: 'info.main',
+  value: 'success.main',
+  risky: 'warning.main',
+};
+
+function isSameMatchLeg(
+  leg: { matchId?: string; matchLabel: string },
+  matchId: string | undefined,
+  homeTeam: string | undefined,
+  awayTeam: string | undefined
+): boolean {
+  if (matchId && leg.matchId) return leg.matchId === matchId;
+  if (homeTeam && awayTeam) {
+    const label = `${homeTeam} vs ${awayTeam}`;
+    return leg.matchLabel === label || leg.matchLabel.includes(homeTeam);
+  }
+  return false;
+}
 
 function SportIcon({ sport }: { sport?: string }) {
   const s = (sport ?? 'football') as SportKind;
@@ -416,12 +437,16 @@ export default function MatchAnalysisDashboard({
 
           <Box>
             <Typography fontWeight={700} gutterBottom>
-              Probabilidades (modelo Poisson)
+              Probabilidades (Poisson + mercado)
             </Typography>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="stretch">
-              {/* Charts Apex fuera del PNG (data-export-ignore); las barras sí se exportan */}
-              <Box sx={{ flex: 1, minHeight: 260 }} data-export-ignore="1">
-                <Chart options={donutOptions} series={donutSeries} type="donut" height={260} width="100%" />
+            <MatchPredictionPanel
+              payload={payload}
+              homeTeam={m?.homeTeam ?? 'Local'}
+              awayTeam={m?.awayTeam ?? 'Visitante'}
+            />
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="stretch" mt={2}>
+              <Box sx={{ flex: 1, minHeight: 220 }} data-export-ignore="1">
+                <Chart options={donutOptions} series={donutSeries} type="donut" height={220} width="100%" />
               </Box>
               <Box sx={{ flex: 1 }}>
                 <Stack spacing={1}>
@@ -447,17 +472,11 @@ export default function MatchAnalysisDashboard({
                     </Box>
                   ))}
                 </Stack>
-                <Typography mt={1.5} variant="body2" color="text.secondary">
-                  Marcador {payload.scoreline.source === 'live' ? 'final' : 'modelo más probable'}:{' '}
-                  <strong>{payload.scoreline.mostLikely}</strong>
-                  {payload.scoreline.alternatives.length > 0 &&
-                    ` · Alt: ${payload.scoreline.alternatives.join(', ')}`}
-                  <Chip
-                    size="small"
-                    label={payload.scoreline.source === 'live' ? 'FT' : 'modelo'}
-                    sx={{ ml: 1 }}
-                  />
-                </Typography>
+                {payload.scoreline.alternatives.length > 0 && (
+                  <Typography mt={1.5} variant="body2" color="text.secondary">
+                    Alternativas: {payload.scoreline.alternatives.join(', ')}
+                  </Typography>
+                )}
               </Box>
             </Stack>
           </Box>
@@ -1107,7 +1126,13 @@ export default function MatchAnalysisDashboard({
             </Box>
           </Box>
 
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
+              gap: 1,
+            }}
+          >
             {(
               [
                 ['Value', payload.picks.value, 'success.light'],
@@ -1119,8 +1144,7 @@ export default function MatchAnalysisDashboard({
               <Box
                 key={title}
                 sx={{
-                  flex: 1,
-                  p: 1.5,
+                  p: { xs: 1, sm: 1.5 },
                   borderRadius: 1.5,
                   bgcolor: bg,
                   border: '1px solid',
@@ -1132,12 +1156,11 @@ export default function MatchAnalysisDashboard({
                 </Typography>
                 {pick ? (
                   <>
-                    <Typography fontWeight={700}>{pick.market}</Typography>
-                    <Typography variant="body2">
-                      @{pick.odds.toFixed(2)} · {pick.aiProb}%
+                    <Typography variant="body2" fontWeight={700} sx={{ mt: 0.25, lineHeight: 1.35 }}>
+                      {pick.market}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
-                      {pick.rationale}
+                    <Typography variant="caption" display="block">
+                      @{pick.odds.toFixed(2)} · {pick.aiProb}%
                     </Typography>
                   </>
                 ) : (
@@ -1147,56 +1170,136 @@ export default function MatchAnalysisDashboard({
                 )}
               </Box>
             ))}
-          </Stack>
+          </Box>
 
           {payload.proposedAccumulators.length > 0 && (
             <Box>
               <Typography fontWeight={700} gutterBottom>
                 Combinadas propuestas
               </Typography>
-              <Stack spacing={1}>
-                {payload.proposedAccumulators.map((acc, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 1.5,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      bgcolor: 'grey.50',
-                    }}
-                  >
-                    <Stack direction="row" spacing={1} alignItems="center" mb={0.5} flexWrap="wrap">
-                      <Typography fontWeight={600}>{acc.title}</Typography>
-                      <Chip size="small" label={acc.riskTier} />
-                      <Chip size="small" variant="outlined" label={`@ ${acc.totalOdds}`} />
-                    </Stack>
-                    {acc.legs.map((leg, j) => (
-                      <Stack
-                        key={j}
-                        direction="row"
-                        justifyContent="space-between"
-                        alignItems="center"
-                        sx={{ py: 0.35 }}
-                      >
-                        <Box>
-                          <Typography variant="body2" fontWeight={800} component="span">
-                            {leg.matchLabel}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" component="div">
-                            Posible resultado: <strong>{leg.market}</strong> @{leg.odds}
-                          </Typography>
-                        </Box>
-                        {leg.matchId && onAnalyzeMatch && (
-                          <Button size="small" onClick={() => onAnalyzeMatch(leg.matchId!)}>
-                            Ver partido
-                          </Button>
-                        )}
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: 'repeat(2, 1fr)',
+                    lg: 'repeat(3, 1fr)',
+                  },
+                  gap: 1,
+                }}
+              >
+                {payload.proposedAccumulators.map((acc, i) => {
+                  const singleMatchContext =
+                    payload.mode === 'MATCH' ||
+                    acc.legs.every((leg) =>
+                      isSameMatchLeg(leg, m?.id, m?.homeTeam, m?.awayTeam)
+                    );
+
+                  return (
+                    <Box
+                      key={i}
+                      sx={{
+                        p: 1.25,
+                        borderRadius: 1.5,
+                        border: '1px solid',
+                        borderColor: accRiskBorder[acc.riskTier] ?? 'divider',
+                        bgcolor: 'grey.50',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 0.75,
+                      }}
+                    >
+                      <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                        <Typography variant="body2" fontWeight={700}>
+                          {acc.title}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`@${acc.totalOdds.toFixed(2)}`}
+                          sx={{ height: 22, '& .MuiChip-label': { px: 0.75, fontSize: '0.75rem' } }}
+                        />
                       </Stack>
-                    ))}
-                  </Box>
-                ))}
-              </Stack>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns:
+                            acc.legs.length > 1 ? { xs: '1fr', sm: '1fr 1fr' } : '1fr',
+                          gap: 0.5,
+                        }}
+                      >
+                        {acc.legs.map((leg, j) => {
+                          const showMatchLabel =
+                            !singleMatchContext &&
+                            !isSameMatchLeg(leg, m?.id, m?.homeTeam, m?.awayTeam);
+                          const showNavigate =
+                            onAnalyzeMatch &&
+                            leg.matchId &&
+                            leg.matchId !== m?.id;
+
+                          return (
+                            <Box
+                              key={j}
+                              sx={{
+                                px: 0.75,
+                                py: 0.5,
+                                borderRadius: 1,
+                                bgcolor: 'background.paper',
+                                border: '1px solid',
+                                borderColor: 'divider',
+                              }}
+                            >
+                              {showMatchLabel && (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  display="block"
+                                  noWrap
+                                  title={leg.matchLabel}
+                                >
+                                  {leg.matchLabel}
+                                </Typography>
+                              )}
+                              <Stack
+                                direction="row"
+                                justifyContent="space-between"
+                                alignItems="baseline"
+                                spacing={0.5}
+                              >
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={600}
+                                  sx={{ lineHeight: 1.3, minWidth: 0 }}
+                                >
+                                  {leg.market}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={800}
+                                  color="primary.main"
+                                  sx={{ flexShrink: 0 }}
+                                >
+                                  @{leg.odds.toFixed(2)}
+                                </Typography>
+                              </Stack>
+                              {showNavigate && (
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  sx={{ mt: 0.25, p: 0, minWidth: 0, fontSize: '0.7rem' }}
+                                  onClick={() => onAnalyzeMatch!(leg.matchId!)}
+                                >
+                                  Ver partido
+                                </Button>
+                              )}
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
             </Box>
           )}
 

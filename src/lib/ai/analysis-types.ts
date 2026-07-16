@@ -172,6 +172,14 @@ export type StructuredMatchPayload = {
     }>;
   };
   probs: { home: number; draw: number; away: number };
+  /** Poisson puro antes de mezclar cuotas */
+  poissonProbs?: { home: number; draw: number; away: number } | null;
+  /** Implícitas normalizadas desde cuotas scrapeadas */
+  marketImplied?: { home: number; draw: number; away: number } | null;
+  /** Top marcadores con probabilidad (%) */
+  scorePredictions?: Array<{ score: string; prob: number }>;
+  /** Favorito según probabilidad final mezclada */
+  favoriteSide?: 'home' | 'draw' | 'away' | null;
   scoreline: { mostLikely: string; alternatives: string[]; source: 'model' | 'live' };
   expected: {
     xgHome: number | null;

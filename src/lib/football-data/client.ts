@@ -254,14 +254,14 @@ export async function findMatchContext(input: {
   if (hit?.homeTeam?.id && hit?.awayTeam?.id) {
     try {
       used += 1;
-      recentHome = await fetchTeamMatches(hit.homeTeam.id, 'FINISHED', 5);
+      recentHome = await fetchTeamMatches(hit.homeTeam.id, 'FINISHED', 10);
       notes.push(`Forma API local: ${recentHome.length} FT.`);
     } catch (err) {
       notes.push(err instanceof Error ? err.message : 'Error team home');
     }
     try {
       used += 1;
-      recentAway = await fetchTeamMatches(hit.awayTeam.id, 'FINISHED', 5);
+      recentAway = await fetchTeamMatches(hit.awayTeam.id, 'FINISHED', 10);
       notes.push(`Forma API visitante: ${recentAway.length} FT.`);
     } catch (err) {
       notes.push(err instanceof Error ? err.message : 'Error team away');

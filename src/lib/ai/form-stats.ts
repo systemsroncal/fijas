@@ -57,7 +57,7 @@ export function summarizeTeamForm(
   teamName: string,
   opts?: { maxRows?: number; leagueHint?: string | null; excludeOpponent?: string | null }
 ): TeamRecentForm | null {
-  const maxRows = opts?.maxRows ?? 8;
+  const maxRows = opts?.maxRows ?? 12;
   let weightedGf = 0;
   let weightedGa = 0;
   let weightedW = 0;
@@ -140,12 +140,12 @@ export function applyFormToMatchContext<
 
   // Forma reciente SIN el rival directo en la muestra (H2H aparte, peso mínimo)
   const formHome = summarizeTeamForm(homeSeason, ctx.homeTeam, {
-    maxRows: 8,
+    maxRows: 12,
     leagueHint: ctx.league,
     excludeOpponent: ctx.awayTeam,
   });
   const formAway = summarizeTeamForm(awaySeason, ctx.awayTeam, {
-    maxRows: 8,
+    maxRows: 12,
     leagueHint: ctx.league,
     excludeOpponent: ctx.homeTeam,
   });

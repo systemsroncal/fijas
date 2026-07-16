@@ -2,6 +2,7 @@ import {
   computeEdge,
   poissonPmf,
   predictMatch,
+  predictPoissonOnly,
   scanMatchEdges,
 } from '@/lib/ai/football-model';
 import { formatMarketLabel, isJunkMatch } from '@/lib/match-display';
@@ -29,6 +30,37 @@ describe('football-model', () => {
     expect(sum).toBeGreaterThan(0.99);
     expect(sum).toBeLessThanOrEqual(1.01);
     expect(p.home).toBeGreaterThan(p.away);
+  });
+
+  it('mezcla hacia mercado cuando cuotas favorecen visita', () => {
+    const ctx = {
+      homeTeam: 'U. Cluj',
+      awayTeam: 'Dyn. Kyiv',
+      league: 'UEL',
+      oddsHome: 3.6,
+      oddsDraw: 3.3,
+      oddsAway: 1.95,
+      formHome: {
+        avgGoalsFor: 0.33,
+        avgGoalsAgainst: 1.33,
+        winRate: 0,
+        drawRate: 0.67,
+        lossRate: 0.33,
+        sampleSize: 6,
+      },
+      formAway: {
+        avgGoalsFor: 1.67,
+        avgGoalsAgainst: 1,
+        winRate: 0.5,
+        drawRate: 0.33,
+        lossRate: 0.17,
+        sampleSize: 6,
+      },
+    };
+    const pois = predictPoissonOnly(ctx);
+    const blended = predictMatch(ctx);
+    expect(blended.away).toBeGreaterThan(blended.home);
+    expect(Math.abs(blended.away - pois.away)).toBeGreaterThan(0.01);
   });
 
   it('forma reciente puede invertir favorito vs tip local', () => {

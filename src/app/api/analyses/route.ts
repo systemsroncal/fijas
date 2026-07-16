@@ -278,34 +278,47 @@ async function loadTeamForm(
   const cleaned = sanitizeFormRows(rowsRaw, homeTeam, awayTeam, league).sort((a, b) =>
     (b.date || '').localeCompare(a.date || '')
   );
-  const withScore = cleaned.filter((r) => r.score).slice(0, 10);
+  const withScore = cleaned.filter((r) => r.score).slice(0, 14);
 
-  const h2hScored = cleaned
-    .filter((r) => {
+  const leagueBoost = (row: FormMatchRow) => {
+    if (!league || !row.league) return 0;
+    const a = row.league.toLowerCase();
+    const b = league.toLowerCase();
+    return a.includes(b) || b.includes(a) ? 1 : 0;
+  };
+
+  const sortForm = (rows: FormMatchRow[]) =>
+    [...rows].sort(
+      (a, b) =>
+        leagueBoost(b) - leagueBoost(a) || (b.date || '').localeCompare(a.date || '')
+    );
+
+  const h2hScored = sortForm(
+    cleaned.filter((r) => {
       if (!r.score) return false;
       const parts = r.label.split(/\s+vs\.?\s+/i);
       if (parts.length !== 2) return false;
       return isH2HPair(homeTeam, awayTeam, parts[0].trim(), parts[1].trim());
     })
-    .slice(0, 8);
+  ).slice(0, 10);
 
-  const homeScored = cleaned
-    .filter((r) => {
+  const homeScored = sortForm(
+    cleaned.filter((r) => {
       if (!r.score) return false;
       const parts = r.label.split(/\s+vs\.?\s+/i);
       if (parts.length !== 2) return false;
       return matchInvolvesTeam(homeTeam, parts[0].trim(), parts[1].trim());
     })
-    .slice(0, 8);
+  ).slice(0, 12);
 
-  const awayScored = cleaned
-    .filter((r) => {
+  const awayScored = sortForm(
+    cleaned.filter((r) => {
       if (!r.score) return false;
       const parts = r.label.split(/\s+vs\.?\s+/i);
       if (parts.length !== 2) return false;
       return matchInvolvesTeam(awayTeam, parts[0].trim(), parts[1].trim());
     })
-    .slice(0, 8);
+  ).slice(0, 12);
 
   if (withScore.length === 0 && h2hScored.length === 0) {
     return emptyForm(

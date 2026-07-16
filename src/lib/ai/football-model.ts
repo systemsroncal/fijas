@@ -34,6 +34,8 @@ export type MatchContext = {
   h2hCount?: number;
 };
 
+export type Implied1x2 = { home: number; draw: number; away: number };
+
 export type ModelProbs = {
   home: number;
   draw: number;
@@ -70,8 +72,40 @@ export function poissonPmf(lambda: number, k: number): number {
 }
 
 /**
- * Estima λ goles: forma reciente (70%) + cuotas (25%) + tip leve.
- * H2H no domina; ventaja local es dinámica según forma.
+ * Probabilidades 1X2 implícitas normalizadas desde cuotas de casa.
+ */
+export function implied1x2FromCtx(ctx: MatchContext): Implied1x2 | null {
+  if (!ctx.oddsHome || !ctx.oddsAway || ctx.oddsHome <= 1 || ctx.oddsAway <= 1) {
+    return null;
+  }
+  const ih = 1 / ctx.oddsHome;
+  const ia = 1 / ctx.oddsAway;
+  const id =
+    ctx.oddsDraw && ctx.oddsDraw > 1 ? 1 / ctx.oddsDraw : Math.max(0.08, (ih + ia) * 0.32);
+  const sum = ih + ia + id;
+  return { home: ih / sum, draw: id / sum, away: ia / sum };
+}
+
+/**
+ * Mezcla Poisson + mercado (cuotas). Prioriza casas cuando hay cuota completa.
+ */
+export function blend1x2WithMarket(
+  pois: Pick<ModelProbs, 'home' | 'draw' | 'away'>,
+  ctx: MatchContext,
+  marketWeight = 0.62
+): Pick<ModelProbs, 'home' | 'draw' | 'away'> {
+  const mkt = implied1x2FromCtx(ctx);
+  if (!mkt) return pois;
+  const w = marketWeight;
+  const home = pois.home * (1 - w) + mkt.home * w;
+  const draw = pois.draw * (1 - w) + mkt.draw * w;
+  const away = pois.away * (1 - w) + mkt.away * w;
+  const sum = home + draw + away || 1;
+  return { home: home / sum, draw: draw / sum, away: away / sum };
+}
+
+/**
+ * Estima λ goles: forma reciente + cuotas (mercado) + tip leve si no contradice cuotas.
  */
 export function estimateLambdas(ctx: MatchContext): { home: number; away: number } {
   const hasForm =
@@ -95,17 +129,18 @@ export function estimateLambdas(ctx: MatchContext): { home: number; away: number
       home *= 0.88;
       away *= 1.12;
     } else if (formDiff < -0.2) {
-      home *= 1.12;
-      away *= 0.88;
-    } else {
-      home *= 1.06; // ventaja local moderada solo si formas parejas
+      home *= 1.08;
+      away *= 0.9;
+    } else if (Math.abs(formDiff) <= 0.08) {
+      home *= 1.03; // ventaja local mínima si formas muy parejas
     }
   } else {
-    home = 1.22;
-    away = 1.08;
+    home = 1.15;
+    away = 1.1;
   }
 
-  // Cuotas de casa (señal fuerte del mercado)
+  const mktEarly = implied1x2FromCtx(ctx);
+  // Cuotas de casa (señal fuerte del mercado → λ)
   if (ctx.oddsHome && ctx.oddsAway && ctx.oddsHome > 1 && ctx.oddsAway > 1) {
     const ih = 1 / ctx.oddsHome;
     const ia = 1 / ctx.oddsAway;
@@ -115,8 +150,8 @@ export function estimateLambdas(ctx: MatchContext): { home: number; away: number
     const pA = ia / norm;
     const oddsLh = 0.65 + pH * 2.4;
     const oddsLa = 0.65 + pA * 2.4;
-    home = home * 0.6 + oddsLh * 0.4;
-    away = away * 0.6 + oddsLa * 0.4;
+    home = home * 0.45 + oddsLh * 0.55;
+    away = away * 0.45 + oddsLa * 0.55;
   } else if (ctx.oddsHome && ctx.oddsHome > 1) {
     home = Math.max(0.35, home * (0.75 + 1 / ctx.oddsHome));
   } else if (ctx.oddsAway && ctx.oddsAway > 1) {
@@ -124,15 +159,21 @@ export function estimateLambdas(ctx: MatchContext): { home: number; away: number
   }
 
   const tip = (ctx.tip ?? '').toLowerCase();
-  if (tip === '1' || tip.includes('home') || tip.includes('local')) {
-    home += 0.08;
-    away -= 0.05;
-  } else if (tip === '2' || tip.includes('away') || tip.includes('visit')) {
-    away += 0.08;
-    home -= 0.05;
-  } else if (tip === 'x' || tip.includes('draw') || tip.includes('empate')) {
-    home -= 0.04;
-    away -= 0.04;
+  const tipHome = tip === '1' || tip.includes('home') || tip.includes('local');
+  const tipAway = tip === '2' || tip.includes('away') || tip.includes('visit');
+  const tipDraw = tip === 'x' || tip.includes('draw') || tip.includes('empate');
+  const marketFavorsAway = mktEarly != null && mktEarly.away > mktEarly.home + 0.08;
+  const marketFavorsHome = mktEarly != null && mktEarly.home > mktEarly.away + 0.08;
+
+  if (tipHome && !marketFavorsAway) {
+    home += 0.04;
+    away -= 0.03;
+  } else if (tipAway && !marketFavorsHome) {
+    away += 0.04;
+    home -= 0.03;
+  } else if (tipDraw) {
+    home -= 0.03;
+    away -= 0.03;
   }
 
   // H2H: peso mínimo (solo si hay 2+ encuentros)
@@ -164,7 +205,14 @@ function remainingFraction(ctx: MatchContext): number {
  * Distribución 1X2 y mercados derivados vía rejilla Poisson 0..8.
  * Si hay marcador live/FT, condiciona: final = actual + goles restantes.
  */
-export function predictMatch(ctx: MatchContext): ModelProbs {
+/**
+ * Poisson puro (sin mezclar cuotas de mercado en 1X2).
+ */
+export function predictPoissonOnly(ctx: MatchContext): ModelProbs {
+  return buildPoissonProbs(ctx);
+}
+
+function buildPoissonProbs(ctx: MatchContext): ModelProbs {
   const { home: lhBase, away: laBase } = estimateLambdas(ctx);
   const ch = ctx.liveHomeScore;
   const ca = ctx.liveAwayScore;
@@ -209,7 +257,7 @@ export function predictMatch(ctx: MatchContext): ModelProbs {
   }
 
   const sum = pHome + pDraw + pAway || 1;
-  return {
+  const poisRaw = {
     home: pHome / sum,
     draw: pDraw / sum,
     away: pAway / sum,
@@ -219,6 +267,23 @@ export function predictMatch(ctx: MatchContext): ModelProbs {
     lambdaHome: hasLive ? lhBase : lh,
     lambdaAway: hasLive ? laBase : la,
   };
+
+  return poisRaw;
+}
+
+/** Poisson + mezcla 1X2 con cuotas de casa cuando existen. */
+export function predictMatch(ctx: MatchContext): ModelProbs {
+  const poisRaw = buildPoissonProbs(ctx);
+  const ch = ctx.liveHomeScore;
+  const ca = ctx.liveAwayScore;
+  const hasLive =
+    ch != null &&
+    ca != null &&
+    (ctx.livePhase === 'live' || ctx.livePhase === 'finished' || ch + ca > 0);
+  const rem = hasLive ? remainingFraction(ctx) : 1;
+  if (hasLive && rem <= 0.02) return poisRaw;
+  const blended = blend1x2WithMarket(poisRaw, ctx);
+  return { ...poisRaw, ...blended };
 }
 
 /** Probabilidad implícita sin margen (simple 1/odds). */
