@@ -22,7 +22,7 @@ import {
   Tab,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
-import { AI_PROVIDERS } from '@/lib/ai/providers-client';
+import { AI_PROVIDERS, ANALYSIS_PROVIDER_OPTIONS, NEURAL_PROVIDER_ID, type AnalysisProviderId } from '@/lib/ai/providers-client';
 import MatchAnalysisDashboard from '@/components/analysis/MatchAnalysisDashboard';
 import AnalysisProgressDialog from '@/components/analysis/AnalysisProgressDialog';
 import type { AnalysisProgressEvent, StructuredMatchPayload } from '@/lib/ai/analysis-types';
@@ -101,7 +101,8 @@ export default function AnalysesPage() {
   const [accumulatorId, setAccumulatorId] = useState('');
   const [suggestedId, setSuggestedId] = useState('');
   const [matchId, setMatchId] = useState('');
-  const [provider, setProvider] = useState('OPENAI');
+  const [provider, setProvider] = useState<AnalysisProviderId>('OPENAI');
+  const [configuredProviders, setConfiguredProviders] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,11 +151,12 @@ export default function AnalysesPage() {
   const refresh = async () => {
     setLoading(true);
     const date = localDateISO();
-    const [aRes, sRes, anRes, mRes] = await Promise.all([
+    const [aRes, sRes, anRes, mRes, keysRes] = await Promise.all([
       fetch(apiUrl('/api/accumulators')),
       fetch(apiUrl('/api/accumulators/suggested')),
       fetch(apiUrl('/api/analyses')),
       fetch(apiUrl(`/api/matches?date=${date}&limit=1000`)),
+      fetch(apiUrl('/api/api-keys')),
     ]);
     if (aRes.ok) {
       const data = await aRes.json();
@@ -173,8 +175,24 @@ export default function AnalysesPage() {
       const rows = (data.matches ?? []) as MatchOpt[];
       setMatches(rows.filter((m) => !isJunkMatch(m.homeTeam, m.awayTeam)));
     }
+    if (keysRes.ok) {
+      const data = await keysRes.json();
+      const active = new Set<string>(
+        (data.keys ?? [])
+          .filter((k: { isActive?: boolean }) => k.isActive !== false)
+          .map((k: { provider: string }) => k.provider)
+      );
+      setConfiguredProviders(active);
+    }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (provider === NEURAL_PROVIDER_ID) return;
+    if (configuredProviders.has(provider)) return;
+    const first = AI_PROVIDERS.find((p) => configuredProviders.has(p.id));
+    setProvider(first?.id ?? NEURAL_PROVIDER_ID);
+  }, [configuredProviders, provider]);
 
   useEffect(() => {
     refresh();
@@ -212,12 +230,17 @@ export default function AnalysesPage() {
       return;
     }
 
+    const providerLabel =
+      provider === NEURAL_PROVIDER_ID
+        ? 'Red neuronal'
+        : ANALYSIS_PROVIDER_OPTIONS.find((p) => p.id === provider)?.label ?? provider;
+
     setRunning(true);
     setProgressEvents([
       {
         type: 'progress',
         step: 'boot',
-        message: `Iniciando deep scan · proveedor ${provider}`,
+        message: `Iniciando deep scan · ${providerLabel}`,
         provider,
         pct: 5,
       },
@@ -229,19 +252,20 @@ export default function AnalysesPage() {
       setMatchId(override.matchId);
     }
 
-    // enrich=true → LLM profundo con failover. force=true → reanalizar combinada ya analizada.
+    const useNeural = provider === NEURAL_PROVIDER_ID;
+    const enrich = !useNeural;
     const body =
       activeMode === 'MATCH'
-        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: true }
+        ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich }
         : activeMode === 'RANDOM'
-          ? { mode: 'RANDOM', provider, enrich: true }
+          ? { mode: 'RANDOM', provider, enrich }
           : activeMode === 'SUGGESTED'
-            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich: true, force }
+            ? { mode: 'ACCUMULATOR', suggestedId, provider, enrich, force }
             : {
                 mode: 'ACCUMULATOR',
                 accumulatorId: activeAccId,
                 provider,
-                enrich: true,
+                enrich,
                 force,
               };
 
@@ -530,14 +554,26 @@ export default function AnalysesPage() {
                   label="Proveedor IA"
                   size="small"
                   value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
-                  sx={{ minWidth: 200 }}
+                  onChange={(e) => setProvider(e.target.value as AnalysisProviderId)}
+                  sx={{ minWidth: 240 }}
+                  helperText={
+                    provider === NEURAL_PROVIDER_ID
+                      ? 'Solo modelo Poisson + datos (sin LLM)'
+                      : configuredProviders.size === 0
+                        ? 'Sin API keys: configúralas en Ajustes o usa Red neuronal'
+                        : 'Failover: 3 intentos por IA → siguiente → Red neuronal'
+                  }
                 >
-                  {AI_PROVIDERS.map((p) => (
-                    <MenuItem key={p.id} value={p.id}>
-                      {p.label}
-                    </MenuItem>
-                  ))}
+                  {ANALYSIS_PROVIDER_OPTIONS.map((p) => {
+                    const isNeural = p.id === NEURAL_PROVIDER_ID;
+                    const hasKey = isNeural || configuredProviders.has(p.id);
+                    return (
+                      <MenuItem key={p.id} value={p.id} disabled={!hasKey}>
+                        {p.label}
+                        {!hasKey ? ' · sin API key' : ''}
+                      </MenuItem>
+                    );
+                  })}
                 </TextField>
                 <Button
                   variant="contained"

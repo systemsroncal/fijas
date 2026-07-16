@@ -488,6 +488,42 @@ const PROVIDER_ORDER: AiProvider[] = [
   'COHERE',
 ];
 
+/** Reintentos por proveedor antes de pasar al siguiente en la cascada. */
+export const MAX_ATTEMPTS_PER_PROVIDER = 3;
+
+export type AnalysisProviderChoice = AiProvider | 'NEURAL';
+
+function waitMs(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+function pickDbProvider(keysByProvider: Partial<Record<AiProvider, string>>): AiProvider {
+  return PROVIDER_ORDER.find((p) => Boolean(keysByProvider[p])) ?? 'OPENAI';
+}
+
+function buildNeuralPayload(
+  base: StructuredMatchPayload,
+  preferred: AnalysisProviderChoice,
+  attempts: AiAttemptLog[],
+  summaryLine: string
+): StructuredMatchPayload {
+  const neural: StructuredMatchPayload = {
+    ...base,
+    deepAnalysis: true,
+    llmUsed: false,
+    llmProvider: null,
+    aiCascade: {
+      preferred: preferred === 'NEURAL' ? 'NEURAL' : preferred,
+      used: 'NEURAL',
+      neuralOnly: true,
+      attempts,
+    },
+    edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] ${summaryLine}`,
+  };
+  neural.brief = buildAnalysisBrief(neural);
+  return neural;
+}
+
 export type EnrichProgressFn = (event: {
   step: string;
   message: string;
@@ -696,7 +732,7 @@ function applyLlmJson(
  * Nunca lanza por timeout de un proveedor: degradación controlada a neuronal.
  */
 export async function enrichPayloadWithLlm(
-  preferred: AiProvider,
+  preferred: AnalysisProviderChoice,
   keysByProvider: Partial<Record<AiProvider, string>>,
   base: StructuredMatchPayload,
   onProgress?: EnrichProgressFn
@@ -708,6 +744,32 @@ export async function enrichPayloadWithLlm(
   neuralOnly: boolean;
   attempts: AiAttemptLog[];
 }> {
+  if (preferred === 'NEURAL') {
+    onProgress?.({
+      step: 'ai',
+      message: 'Red Neuronal (sin IA externa)',
+      provider: 'NEURAL',
+      pct: 88,
+    });
+    const attempts: AiAttemptLog[] = [
+      { provider: 'NEURAL', status: 'skip', detail: 'Modo explícito' },
+    ];
+    const payload = buildNeuralPayload(
+      base,
+      'NEURAL',
+      attempts,
+      'Análisis solo con modelo Poisson + H2H/forma/TheSportsDB (sin LLM).'
+    );
+    return {
+      payload,
+      raw: JSON.stringify(payload),
+      providerUsed: pickDbProvider(keysByProvider),
+      promptUsed: 'neural-model-only-user-choice',
+      neuralOnly: true,
+      attempts,
+    };
+  }
+
   try {
     return await enrichPayloadWithLlmInner(
       preferred,
@@ -723,27 +785,20 @@ export async function enrichPayloadWithLlm(
       ok: false,
       pct: 90,
     });
-    const neural: StructuredMatchPayload = {
-      ...base,
-      deepAnalysis: true,
-      llmUsed: false,
-      llmProvider: null,
-      aiCascade: {
-        preferred,
-        used: 'NEURAL',
-        neuralOnly: true,
-        attempts: [{ provider: preferred, status: 'fail', detail }],
-      },
-      edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] Fallback forzado tras error de IA: ${detail}`,
-    };
-    neural.brief = buildAnalysisBrief(neural);
+    const attempts: AiAttemptLog[] = [{ provider: preferred, status: 'fail', detail }];
+    const payload = buildNeuralPayload(
+      base,
+      preferred,
+      attempts,
+      `Fallback forzado tras error de IA: ${detail}`
+    );
     return {
-      payload: neural,
-      raw: JSON.stringify(neural),
+      payload,
+      raw: JSON.stringify(payload),
       providerUsed: preferred,
       promptUsed: 'neural-model-only-forced',
       neuralOnly: true,
-      attempts: neural.aiCascade!.attempts,
+      attempts,
     };
   }
 }
@@ -776,88 +831,106 @@ async function enrichPayloadWithLlmInner(
       message: 'Sin API keys activas → Red Neuronal',
       pct: 88,
     });
-    const neural: StructuredMatchPayload = {
-      ...base,
-      deepAnalysis: true,
-      llmUsed: false,
-      llmProvider: null,
-      aiCascade: {
-        preferred,
-        used: 'NEURAL',
-        neuralOnly: true,
-        attempts: [
-          {
-            provider: preferred,
-            status: 'skip',
-            detail: 'Sin key activa',
-          },
-        ],
-      },
-      edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] Sin IA externa: resultado del modelo Poisson + historial/H2H/TheSportsDB disponibles.`,
-    };
-    neural.brief = buildAnalysisBrief(neural);
+    const noKeyAttempts: AiAttemptLog[] = [
+      { provider: preferred, status: 'skip', detail: 'Sin key activa' },
+    ];
+    const payload = buildNeuralPayload(
+      base,
+      preferred,
+      noKeyAttempts,
+      'Sin IA externa: resultado del modelo Poisson + historial/H2H/TheSportsDB disponibles.'
+    );
     return {
-      payload: neural,
-      raw: JSON.stringify(neural),
+      payload,
+      raw: JSON.stringify(payload),
       providerUsed: preferred,
       promptUsed: 'neural-model-only',
       neuralOnly: true,
-      attempts: neural.aiCascade!.attempts,
+      attempts: noKeyAttempts,
     };
   }
 
   for (const provider of withKeys) {
     const key = keysByProvider[provider]!;
-    attempts.push({ provider, status: 'trying' });
-    onProgress?.({
-      step: 'ai',
-      message: `Consultando IA: ${provider}…`,
-      provider,
-      pct: 70 + Math.min(15, attempts.length * 2),
-    });
-    try {
-      const raw = await callProvider(provider, key, [
-        {
-          role: 'system',
-          content:
-            'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa H2H, forma de temporada y matchDiagnostics si existen.',
-        },
-        { role: 'user', content: prompt },
-      ]);
-      attempts[attempts.length - 1] = {
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_PROVIDER; attempt++) {
+      attempts.push({
         provider,
-        status: 'ok',
-        detail: 'Respuesta recibida',
-      };
-      onProgress?.({
-        step: 'ai',
-        message: `${provider} respondió OK`,
-        provider,
-        ok: true,
-        pct: 92,
+        status: 'trying',
+        detail:
+          attempt > 1
+            ? `Intento ${attempt}/${MAX_ATTEMPTS_PER_PROVIDER}`
+            : undefined,
       });
-      const payload = applyLlmJson(base, raw, provider, attempts);
-      if (payload.aiCascade) {
-        payload.aiCascade.preferred = preferred;
-      }
-      return {
-        payload,
-        raw,
-        providerUsed: provider,
-        promptUsed: prompt,
-        neuralOnly: false,
-        attempts,
-      };
-    } catch (err) {
-      const detail = err instanceof Error ? err.message.slice(0, 180) : 'Error';
-      attempts[attempts.length - 1] = { provider, status: 'fail', detail };
       onProgress?.({
         step: 'ai',
-        message: `${provider} no respondió → siguiente…`,
+        message:
+          attempt === 1
+            ? `Consultando IA: ${provider}…`
+            : `${provider} · reintento ${attempt}/${MAX_ATTEMPTS_PER_PROVIDER}…`,
         provider,
-        ok: false,
         pct: 70 + Math.min(15, attempts.length * 2),
       });
+      try {
+        const raw = await callProvider(provider, key, [
+          {
+            role: 'system',
+            content:
+              'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa H2H, forma de temporada y matchDiagnostics si existen.',
+          },
+          { role: 'user', content: prompt },
+        ]);
+        attempts[attempts.length - 1] = {
+          provider,
+          status: 'ok',
+          detail:
+            attempt > 1
+              ? `Respuesta recibida (intento ${attempt})`
+              : 'Respuesta recibida',
+        };
+        onProgress?.({
+          step: 'ai',
+          message: `${provider} respondió OK`,
+          provider,
+          ok: true,
+          pct: 92,
+        });
+        const payload = applyLlmJson(base, raw, provider, attempts);
+        if (payload.aiCascade) {
+          payload.aiCascade.preferred = preferred;
+        }
+        return {
+          payload,
+          raw,
+          providerUsed: provider,
+          promptUsed: prompt,
+          neuralOnly: false,
+          attempts,
+        };
+      } catch (err) {
+        const detail = err instanceof Error ? err.message.slice(0, 180) : 'Error';
+        attempts[attempts.length - 1] = {
+          provider,
+          status: 'fail',
+          detail:
+            attempt < MAX_ATTEMPTS_PER_PROVIDER
+              ? `${detail} (intento ${attempt}/${MAX_ATTEMPTS_PER_PROVIDER})`
+              : `${detail} · agotados ${MAX_ATTEMPTS_PER_PROVIDER} intentos`,
+        };
+        const hasRetry = attempt < MAX_ATTEMPTS_PER_PROVIDER;
+        onProgress?.({
+          step: 'ai',
+          message: hasRetry
+            ? `${provider} falló (intento ${attempt}) → reintento…`
+            : `${provider} no respondió tras ${MAX_ATTEMPTS_PER_PROVIDER} intentos → siguiente…`,
+          provider,
+          ok: false,
+          pct: 70 + Math.min(15, attempts.length * 2),
+        });
+        if (hasRetry) {
+          await waitMs(1200 * attempt);
+        }
+      }
     }
   }
 
@@ -866,23 +939,15 @@ async function enrichPayloadWithLlmInner(
     message: 'Todas las IA fallaron → Red Neuronal',
     pct: 90,
   });
-  const neural: StructuredMatchPayload = {
-    ...base,
-    deepAnalysis: true,
-    llmUsed: false,
-    llmProvider: null,
-    aiCascade: {
-      preferred,
-      used: 'NEURAL',
-      neuralOnly: true,
-      attempts,
-    },
-    edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] IAs no disponibles. Se entrega el modelo Poisson + H2H/forma/TheSportsDB sin narrativa LLM.`,
-  };
-  neural.brief = buildAnalysisBrief(neural);
+  const payload = buildNeuralPayload(
+    base,
+    preferred,
+    attempts,
+    'IAs no disponibles. Se entrega el modelo Poisson + H2H/forma/TheSportsDB sin narrativa LLM.'
+  );
   return {
-    payload: neural,
-    raw: JSON.stringify(neural),
+    payload,
+    raw: JSON.stringify(payload),
     providerUsed: preferred,
     promptUsed: 'neural-model-only-after-failover',
     neuralOnly: true,

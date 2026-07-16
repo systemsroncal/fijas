@@ -11,6 +11,18 @@ export const AI_PROVIDERS = [
   { id: 'COHERE', label: 'Cohere' },
 ] as const;
 
+/** Opción especial: solo modelo Poisson + datos (sin LLM externo). */
+export const NEURAL_PROVIDER_ID = 'NEURAL' as const;
+
+export type AiProviderId = (typeof AI_PROVIDERS)[number]['id'];
+export type AnalysisProviderId = AiProviderId | typeof NEURAL_PROVIDER_ID;
+
+/** Opciones del selector de análisis (IAs + red neuronal). */
+export const ANALYSIS_PROVIDER_OPTIONS = [
+  ...AI_PROVIDERS,
+  { id: NEURAL_PROVIDER_ID, label: 'Red neuronal (sin IA externa)' },
+] as const;
+
 export const AI_HELP: Record<string, string[]> = {
   OPENAI: [
     'Ve a https://platform.openai.com/api-keys',

@@ -147,7 +147,7 @@ export default function AnalysisProgressDialog({
       },
       {
         id: 'boot3',
-        text: `› IA preferida: ${provider} (failover → otras keys → Red Neuronal)`,
+        text: `› IA preferida: ${provider} (3 intentos → siguiente IA → Red Neuronal)`,
         tone: 'ai',
       },
     ]);
@@ -346,7 +346,7 @@ export default function AnalysisProgressDialog({
                 variant="caption"
                 sx={{ color: '#94A3B8', display: 'block', mb: 1.5 }}
               >
-                Preferida: {provider} → si no responde, siguiente IA → Red Neuronal
+                Preferida: {provider} → 3 intentos por IA → siguiente → Red Neuronal
               </Typography>
               <LinearProgress
                 variant={running && pct < 8 ? 'indeterminate' : 'determinate'}

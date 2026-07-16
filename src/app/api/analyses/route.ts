@@ -82,12 +82,11 @@ function attachSources(
 
 function requireLlmKey(
   enrich: boolean | undefined,
-  _provider: AiProvider,
+  _provider: AiProvider | 'NEURAL',
   keysByProvider: Partial<Record<AiProvider, string>>
 ): NextResponse | null {
   // enrich=true: si no hay ninguna key, se permite (cascada → neuronal)
-  if (enrich === false) return null;
-  void _provider;
+  if (enrich === false || _provider === 'NEURAL') return null;
   void keysByProvider;
   return null;
 }
@@ -125,7 +124,7 @@ const schema = z
     accumulatorId: z.string().optional(),
     suggestedId: z.string().optional(),
     matchId: z.string().optional(),
-    provider: z.nativeEnum(AiProvider),
+    provider: z.union([z.nativeEnum(AiProvider), z.literal('NEURAL')]),
     enrich: z.boolean().optional().default(true),
     /** Permite reanalizar una combinada ya marcada isAnalyzed */
     force: z.boolean().optional().default(false),
@@ -136,6 +135,74 @@ const schema = z
       Boolean(b.accumulatorId || b.suggestedId || b.matchId),
     { message: 'matchId, accumulatorId o suggestedId requerido (salvo RANDOM)' }
   );
+
+type AnalysisRequestBody = z.infer<typeof schema>;
+
+type ProgressEmit = (e: {
+  type: 'progress';
+  step?: string;
+  message: string;
+  provider?: string;
+  ok?: boolean;
+  pct?: number;
+  source?: string;
+}) => void;
+
+async function runPayloadEnrichment(
+  body: AnalysisRequestBody,
+  payload: StructuredMatchPayload,
+  keysByProvider: Partial<Record<AiProvider, string>>,
+  emit: ProgressEmit
+): Promise<{
+  payload: StructuredMatchPayload;
+  raw: string;
+  providerUsed: AiProvider;
+  promptUsed: string;
+}> {
+  const neuralOnly = body.provider === 'NEURAL';
+  const llmCascade = !neuralOnly && body.enrich !== false;
+
+  if (!neuralOnly && !llmCascade) {
+    return {
+      payload,
+      raw: JSON.stringify(payload),
+      providerUsed: body.provider as AiProvider,
+      promptUsed: 'deep-poisson+sportsdb',
+    };
+  }
+
+  emit({
+    type: 'progress',
+    step: 'ai',
+    provider: neuralOnly ? 'NEURAL' : body.provider,
+    message: neuralOnly
+      ? 'Modo Red Neuronal (sin IA externa)…'
+      : `Probando IA preferida: ${body.provider}`,
+    pct: 68,
+  });
+
+  const enriched = await enrichPayloadWithLlm(
+    neuralOnly ? 'NEURAL' : (body.provider as AiProvider),
+    keysByProvider,
+    payload,
+    (ev) =>
+      emit({
+        type: 'progress',
+        step: ev.step,
+        message: ev.message,
+        provider: ev.provider,
+        ok: ev.ok,
+        pct: ev.pct,
+      })
+  );
+
+  return {
+    payload: enriched.payload,
+    raw: enriched.raw,
+    providerUsed: enriched.providerUsed,
+    promptUsed: enriched.promptUsed,
+  };
+}
 
 type LegJson = {
   home?: string;
@@ -578,37 +645,11 @@ export async function POST(request: Request) {
           payload.footballData?.matchId || payload.footballData?.standingsHome
         ),
       });
-      let raw = JSON.stringify(payload);
-      let providerUsed: AiProvider = body.provider;
-      let promptUsed = 'deep-poisson+sportsdb';
-
-      if (body.enrich !== false) {
-        emit({
-          type: 'progress',
-          step: 'ai',
-          provider: body.provider,
-          message: `Probando IA preferida: ${body.provider}`,
-          pct: 68,
-        });
-        const enriched = await enrichPayloadWithLlm(
-          body.provider,
-          keysByProvider,
-          payload,
-          (ev) =>
-            emit({
-              type: 'progress',
-              step: ev.step,
-              message: ev.message,
-              provider: ev.provider,
-              ok: ev.ok,
-              pct: ev.pct,
-            })
-        );
-        payload = enriched.payload;
-        raw = enriched.raw;
-        providerUsed = enriched.providerUsed;
-        promptUsed = enriched.promptUsed;
-      }
+      const enrichedResult = await runPayloadEnrichment(body, payload, keysByProvider, emit);
+      payload = enrichedResult.payload;
+      const raw = enrichedResult.raw;
+      const providerUsed = enrichedResult.providerUsed;
+      const promptUsed = enrichedResult.promptUsed;
 
       const scores = scoresFromPayload(payload);
       const analysis = await prisma.analysis.create({
@@ -749,30 +790,11 @@ export async function POST(request: Request) {
       } else {
         payload = { ...payload, llmUsed: false, llmProvider: null };
       }
-      let raw = JSON.stringify(payload);
-      let providerUsed: AiProvider = body.provider;
-      let promptUsed = 'deep-random+sportsdb';
-
-      if (body.enrich !== false) {
-        const enriched = await enrichPayloadWithLlm(
-          body.provider,
-          keysByProvider,
-          payload,
-          (ev) =>
-            emit({
-              type: 'progress',
-              step: ev.step,
-              message: ev.message,
-              provider: ev.provider,
-              ok: ev.ok,
-              pct: ev.pct,
-            })
-        );
-        payload = enriched.payload;
-        raw = enriched.raw;
-        providerUsed = enriched.providerUsed;
-        promptUsed = enriched.promptUsed;
-      }
+      const enrichedRandom = await runPayloadEnrichment(body, payload, keysByProvider, emit);
+      payload = enrichedRandom.payload;
+      const raw = enrichedRandom.raw;
+      const providerUsed = enrichedRandom.providerUsed;
+      const promptUsed = enrichedRandom.promptUsed;
 
       const scores = scoresFromPayload(payload);
       const primaryMatchId =
@@ -1028,30 +1050,11 @@ export async function POST(request: Request) {
       fetchBadges: false,
     });
     payload = await applyFootballDataToPayload(payload);
-    let raw = JSON.stringify(payload);
-    let providerUsed: AiProvider = body.provider;
-    let promptUsed = 'deep-accumulator+sportsdb+fd';
-
-    if (body.enrich !== false) {
-      const enriched = await enrichPayloadWithLlm(
-        body.provider,
-        keysByProvider,
-        payload,
-        (ev) =>
-          emit({
-            type: 'progress',
-            step: ev.step,
-            message: ev.message,
-            provider: ev.provider,
-            ok: ev.ok,
-            pct: ev.pct,
-          })
-      );
-      payload = enriched.payload;
-      raw = enriched.raw;
-      providerUsed = enriched.providerUsed;
-      promptUsed = enriched.promptUsed;
-    }
+    const enrichedAcc = await runPayloadEnrichment(body, payload, keysByProvider, emit);
+    payload = enrichedAcc.payload;
+    const raw = enrichedAcc.raw;
+    const providerUsed = enrichedAcc.providerUsed;
+    const promptUsed = enrichedAcc.promptUsed;
 
     // Persistir picks elegidos por el modelo en cada pierna
     for (const leg of built.resolvedLegs) {
