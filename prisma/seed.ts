@@ -18,6 +18,17 @@ const SOURCES = [
   { name: 'StakeGains', slug: 'stakegains', baseUrl: 'https://www.stakegains.com' },
   { name: 'NordicBet', slug: 'nordicbet', baseUrl: 'https://www.nordicbet.com' },
   { name: 'Betway', slug: 'betway', baseUrl: 'https://www.betway.com' },
+  { name: '365Scores', slug: 'scores365', baseUrl: 'https://www.365scores.com/es' },
+  { name: 'Flashscore', slug: 'flashscore', baseUrl: 'https://www.flashscore.pe' },
+  { name: 'SofaScore', slug: 'sofascore', baseUrl: 'https://www.sofascore.com/es' },
+  { name: 'Opta Analyst', slug: 'theanalyst', baseUrl: 'https://theanalyst.com' },
+  { name: 'CuotasAhora', slug: 'cuotasahora', baseUrl: 'https://www.cuotasahora.com' },
+  { name: 'FBref', slug: 'fbref', baseUrl: 'https://fbref.com/en/matches/' },
+  { name: 'NBA.com', slug: 'nba', baseUrl: 'https://www.nba.com' },
+  { name: 'NFL.com', slug: 'nfl', baseUrl: 'https://www.nfl.com' },
+  { name: 'ESPN / Yahoo Sports', slug: 'espn_yahoo', baseUrl: 'https://www.espn.com' },
+  { name: 'Búsquedas web (tips)', slug: 'google_search', baseUrl: 'https://duckduckgo.com' },
+  { name: 'football-data.org', slug: 'football_data', baseUrl: 'https://www.football-data.org' },
 ];
 
 async function main() {

@@ -22,23 +22,63 @@ import { localDateISO } from '@/lib/local-date';
 import { isMatchStillOpenPeru, peruDateISO } from '@/lib/timezone';
 import type { FormMatchRow, TeamFormBlock } from '@/lib/ai/analysis-types';
 import { applySportsDbToPayload } from '@/lib/sportsdb/enrich';
+import { applyFootballDataToPayload } from '@/lib/football-data/enrich';
+import { isFootballDataConfigured } from '@/lib/football-data/client';
 import { fetchMatchStatus } from '@/lib/sportsdb/match-status';
 import { buildMatchDiagnostics } from '@/lib/sportsdb/player-diagnostics';
+import { ANALYSIS_EXTERNAL_SOURCES } from '@/lib/ai/external-sources';
+import { mqPublish } from '@/lib/mq/bus';
+
+function attachSources(
+  payload: StructuredMatchPayload,
+  extras?: { sportsDbOk?: boolean; formOk?: boolean; footballDataOk?: boolean }
+): StructuredMatchPayload {
+  return {
+    ...payload,
+    externalSources: ANALYSIS_EXTERNAL_SOURCES.map((s) => {
+      if (s.id === 'sportsdb') {
+        return {
+          name: s.name,
+          status: extras?.sportsDbOk ? 'ok' : 'skip',
+          detail: extras?.sportsDbOk ? 'TheSportsDB OK' : 'Sin match / timeout',
+        };
+      }
+      if (s.id === 'football_data') {
+        return {
+          name: s.name,
+          status: !isFootballDataConfigured()
+            ? 'skip'
+            : extras?.footballDataOk
+              ? 'ok'
+              : 'fail',
+          detail: !isFootballDataConfigured()
+            ? 'Sin FOOTBALL_DATA_API_TOKEN'
+            : extras?.footballDataOk
+              ? 'football-data.org OK'
+              : 'Sin match / error',
+        };
+      }
+      if (s.id === 'h2h') {
+        return {
+          name: s.name,
+          status: extras?.formOk ? 'ok' : 'skip',
+          detail: extras?.formOk ? 'H2H/forma cargados' : 'Sin marcadores',
+        };
+      }
+      return { name: s.name, status: 'ok' as const, detail: 'Consultado / en cola' };
+    }),
+  };
+}
 
 function requireLlmKey(
   enrich: boolean | undefined,
-  provider: AiProvider,
+  _provider: AiProvider,
   keysByProvider: Partial<Record<AiProvider, string>>
 ): NextResponse | null {
+  // enrich=true: si no hay ninguna key, se permite (cascada → neuronal)
   if (enrich === false) return null;
-  if (!keysByProvider[provider]) {
-    return NextResponse.json(
-      {
-        error: `Para analizar con ${provider} necesitas una API key activa de ese proveedor en Ajustes. No se usa otra IA automáticamente.`,
-      },
-      { status: 400 }
-    );
-  }
+  void _provider;
+  void keysByProvider;
   return null;
 }
 
@@ -143,28 +183,43 @@ function scoresFromPayload(payload: StructuredMatchPayload) {
 }
 
 /**
- * Forma reciente SOLO con marcadores reales extraídos de statsNote / historial BD.
+ * Forma reciente + H2H + forma por equipo en temporada (solo marcadores reales).
  */
 async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFormBlock> {
   const history = await prisma.match.findMany({
     where: {
       OR: [
+        { homeTeam: { contains: homeTeam.slice(0, 24) } },
+        { awayTeam: { contains: homeTeam.slice(0, 24) } },
+        { homeTeam: { contains: awayTeam.slice(0, 24) } },
+        { awayTeam: { contains: awayTeam.slice(0, 24) } },
         { homeTeam },
         { awayTeam },
-        { homeTeam: homeTeam },
-        { awayTeam: awayTeam },
-        { homeTeam: { equals: homeTeam } },
-        { awayTeam: { equals: awayTeam } },
       ],
     },
     include: {
       predictions: { orderBy: { scrapedAt: 'desc' }, take: 2 },
     },
     orderBy: { matchDate: 'desc' },
-    take: 40,
+    take: 80,
   });
 
+  const norm = (s: string) => s.trim().toLowerCase();
+  const homeN = norm(homeTeam);
+  const awayN = norm(awayTeam);
+  const involves = (team: string, rowHome: string, rowAway: string) => {
+    const t = norm(team);
+    const h = norm(rowHome);
+    const a = norm(rowAway);
+    return h.includes(t) || a.includes(t) || t.includes(h) || t.includes(a);
+  };
+  const isH2H = (rowHome: string, rowAway: string) =>
+    involves(homeTeam, rowHome, rowAway) && involves(awayTeam, rowHome, rowAway);
+
   const rows: FormMatchRow[] = [];
+  const h2h: FormMatchRow[] = [];
+  const homeSeason: FormMatchRow[] = [];
+  const awaySeason: FormMatchRow[] = [];
   const goalSamples: number[] = [];
   let cardsTotal = 0;
   let cardsSamples = 0;
@@ -174,13 +229,19 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
     const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
     const score = extractScoreFromText(note) ?? extractScoreFromText(m.kickoff);
     const tip = m.predictions[0]?.betChoice ?? null;
-    rows.push({
+    const row: FormMatchRow = {
       matchId: m.id,
       label: `${m.homeTeam} vs ${m.awayTeam}`,
       date: m.matchDate.toISOString().slice(0, 10),
       score,
       tip,
-    });
+    };
+    rows.push(row);
+
+    if (isH2H(m.homeTeam, m.awayTeam) && score) h2h.push(row);
+    if (involves(homeTeam, m.homeTeam, m.awayTeam) && score) homeSeason.push(row);
+    if (involves(awayTeam, m.homeTeam, m.awayTeam) && score) awaySeason.push(row);
+
     if (score) {
       const [a, b] = score.split('-').map(Number);
       if (!Number.isNaN(a) && !Number.isNaN(b)) goalSamples.push(a + b);
@@ -193,7 +254,11 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
   }
 
   const withScore = rows.filter((r) => r.score).slice(0, 10);
-  if (withScore.length === 0) {
+  const h2hScored = h2h.slice(0, 8);
+  const homeScored = homeSeason.slice(0, 8);
+  const awayScored = awaySeason.slice(0, 8);
+
+  if (withScore.length === 0 && h2hScored.length === 0) {
     return emptyForm(
       rows.length > 0
         ? `Hay ${rows.length} partidos registrados de estos equipos, pero sin marcador scrapeado. No se inventan resultados.`
@@ -206,9 +271,16 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
       ? Math.round((goalSamples.reduce((s, n) => s + n, 0) / goalSamples.length) * 100) / 100
       : null;
 
+  const parts: string[] = [];
+  if (withScore.length) parts.push(`${withScore.length} marcadores`);
+  if (h2hScored.length) parts.push(`${h2hScored.length} H2H`);
+  if (homeScored.length || awayScored.length) {
+    parts.push(`forma temporada ${homeN.slice(0, 12)}/${awayN.slice(0, 12)}`);
+  }
+
   return {
     available: true,
-    message: `Historial real: ${withScore.length} marcadores scrapeados (máx. 10).`,
+    message: `Historial real: ${parts.join(', ')} (máx. muestra).`,
     recentScores: withScore.map((r) => r.score!).slice(0, 10),
     avgGoalsFor: null,
     avgGoalsAgainst: null,
@@ -218,6 +290,9 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
       cardsSamples > 0 ? Math.round((cardsTotal / cardsSamples) * 100) / 100 : null,
     sampleSize: withScore.length,
     rows: withScore,
+    h2h: h2hScored,
+    homeSeason: homeScored,
+    awaySeason: awayScored,
   };
 }
 
@@ -239,9 +314,22 @@ export async function POST(request: Request) {
       keysByProvider[k.provider] = decryptSecret(k.encryptedKey);
     }
 
-    // enrich=true exige key del proveedor elegido (sin fallback a NVIDIA/otro)
+    // enrich=true → LLM profundo con failover a otras IAs / neuronal
     const earlyKeyErr = requireLlmKey(body.enrich, body.provider, keysByProvider);
     if (earlyKeyErr) return earlyKeyErr;
+
+    const progressLog: Array<{
+      type: 'progress';
+      step?: string;
+      message: string;
+      provider?: string;
+      ok?: boolean;
+      pct?: number;
+      source?: string;
+    }> = [];
+    const emit = (e: (typeof progressLog)[number]) => {
+      progressLog.push(e);
+    };
 
     if (body.mode === 'MATCH') {
       if (!body.matchId) {
@@ -277,9 +365,26 @@ export async function POST(request: Request) {
       }
 
       const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
+      emit({
+        type: 'progress',
+        step: 'h2h',
+        source: 'h2h',
+        message: form.available
+          ? `Historial: ${form.message}`
+          : 'Sin historial H2H/forma scrapeado',
+        ok: form.available,
+        pct: 18,
+      });
       let ctx = toCtx(matchForAi);
       let matchDiagnostics: ReturnType<typeof buildMatchDiagnostics> | null = null;
       // Live/FT con stats (tope 18s: no bloquear la IA si SportsDB va lento)
+      emit({
+        type: 'progress',
+        step: 'sportsdb',
+        source: 'sportsdb',
+        message: 'Consultando TheSportsDB (live/forma)…',
+        pct: 28,
+      });
       try {
         const st = await withTimeout(
           fetchMatchStatus({
@@ -305,9 +410,30 @@ export async function POST(request: Request) {
           livePhase: st.phase,
           liveMinute: lastMin ?? null,
         };
+        emit({
+          type: 'progress',
+          step: 'sportsdb',
+          source: 'sportsdb',
+          message: `TheSportsDB OK · fase ${st.phase}${st.score ? ` · ${st.score}` : ''}`,
+          ok: true,
+          pct: 40,
+        });
       } catch {
-        /* sin live: seguir con modelo + LLM */
+        emit({
+          type: 'progress',
+          step: 'sportsdb',
+          source: 'sportsdb',
+          message: 'TheSportsDB timeout/skip — continuo con modelo',
+          ok: false,
+          pct: 40,
+        });
       }
+      emit({
+        type: 'progress',
+        step: 'poisson',
+        message: 'Ejecutando modelo neuronal Poisson…',
+        pct: 52,
+      });
       let payload = buildModelPayload(ctx, 'MATCH', { form });
       const cornerPair = cornersFromDiagnostics(matchDiagnostics);
       payload = {
@@ -330,12 +456,59 @@ export async function POST(request: Request) {
         matchDateYmd: localDateISO(),
         fetchBadges: true,
       });
+      emit({
+        type: 'progress',
+        step: 'football_data',
+        source: 'football_data',
+        message: isFootballDataConfigured()
+          ? 'Consultando football-data.org (tabla/forma)…'
+          : 'football-data.org omitido (sin token)',
+        pct: 58,
+      });
+      payload = await applyFootballDataToPayload(payload);
+      if (payload.footballData) {
+        emit({
+          type: 'progress',
+          step: 'football_data',
+          source: 'football_data',
+          message: `football-data.org · ${payload.footballData.notes.slice(0, 2).join(' · ') || 'OK'}`,
+          ok: Boolean(payload.footballData.matchId || payload.footballData.standingsHome),
+          pct: 62,
+        });
+      }
+      payload = attachSources(payload, {
+        sportsDbOk: Boolean(payload.sportsDb?.matchedEvent || matchDiagnostics),
+        formOk: form.available,
+        footballDataOk: Boolean(
+          payload.footballData?.matchId || payload.footballData?.standingsHome
+        ),
+      });
       let raw = JSON.stringify(payload);
       let providerUsed: AiProvider = body.provider;
       let promptUsed = 'deep-poisson+sportsdb';
 
       if (body.enrich !== false) {
-        const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
+        emit({
+          type: 'progress',
+          step: 'ai',
+          provider: body.provider,
+          message: `Probando IA preferida: ${body.provider}`,
+          pct: 68,
+        });
+        const enriched = await enrichPayloadWithLlm(
+          body.provider,
+          keysByProvider,
+          payload,
+          (ev) =>
+            emit({
+              type: 'progress',
+              step: ev.step,
+              message: ev.message,
+              provider: ev.provider,
+              ok: ev.ok,
+              pct: ev.pct,
+            })
+        );
         payload = enriched.payload;
         raw = enriched.raw;
         providerUsed = enriched.providerUsed;
@@ -359,14 +532,20 @@ export async function POST(request: Request) {
         include: { match: true, accumulator: true },
       });
 
-      if (keysByProvider[providerUsed]) {
+      if (keysByProvider[providerUsed] && payload.llmUsed) {
         await prisma.apiKey.updateMany({
           where: { userId: auth.user.id, provider: providerUsed },
           data: { lastUsed: new Date() },
         });
       }
 
-      return NextResponse.json({ analysis, payload });
+      void mqPublish({
+        routingKey: 'analysis.completed',
+        key: analysis.id,
+        payload: { analysisId: analysis.id, mode: 'MATCH', provider: providerUsed },
+      });
+
+      return NextResponse.json({ analysis, payload, progressLog });
     }
 
     if (body.mode === 'RANDOM') {
@@ -441,6 +620,7 @@ export async function POST(request: Request) {
         matchDateYmd: date,
         fetchBadges: true,
       });
+      payload = await applyFootballDataToPayload(payload);
       // Stats live del partido elegido (si hay)
       if (payload.match?.homeTeam && payload.match?.awayTeam) {
         try {
@@ -479,7 +659,20 @@ export async function POST(request: Request) {
       let promptUsed = 'deep-random+sportsdb';
 
       if (body.enrich !== false) {
-        const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
+        const enriched = await enrichPayloadWithLlm(
+          body.provider,
+          keysByProvider,
+          payload,
+          (ev) =>
+            emit({
+              type: 'progress',
+              step: ev.step,
+              message: ev.message,
+              provider: ev.provider,
+              ok: ev.ok,
+              pct: ev.pct,
+            })
+        );
         payload = enriched.payload;
         raw = enriched.raw;
         providerUsed = enriched.providerUsed;
@@ -489,6 +682,14 @@ export async function POST(request: Request) {
       const scores = scoresFromPayload(payload);
       const primaryMatchId =
         payload.match?.id && payload.match.id !== 'N/A' ? payload.match.id : null;
+
+      payload = attachSources(payload, {
+        sportsDbOk: Boolean(payload.sportsDb?.matchedEvent || payload.matchDiagnostics),
+        formOk: Boolean(payload.form?.available),
+        footballDataOk: Boolean(
+          payload.footballData?.matchId || payload.footballData?.standingsHome
+        ),
+      });
 
       const analysis = await prisma.analysis.create({
         data: {
@@ -506,7 +707,13 @@ export async function POST(request: Request) {
         include: { match: true, accumulator: true },
       });
 
-      return NextResponse.json({ analysis, payload });
+      void mqPublish({
+        routingKey: 'analysis.completed',
+        key: analysis.id,
+        payload: { analysisId: analysis.id, mode: 'RANDOM', provider: providerUsed },
+      });
+
+      return NextResponse.json({ analysis, payload, progressLog });
     }
 
     let accumulator = body.accumulatorId
@@ -725,12 +932,26 @@ export async function POST(request: Request) {
       matchDateYmd: localDateISO(),
       fetchBadges: false,
     });
+    payload = await applyFootballDataToPayload(payload);
     let raw = JSON.stringify(payload);
     let providerUsed: AiProvider = body.provider;
-    let promptUsed = 'deep-accumulator+sportsdb';
+    let promptUsed = 'deep-accumulator+sportsdb+fd';
 
     if (body.enrich !== false) {
-      const enriched = await enrichPayloadWithLlm(body.provider, keysByProvider, payload);
+      const enriched = await enrichPayloadWithLlm(
+        body.provider,
+        keysByProvider,
+        payload,
+        (ev) =>
+          emit({
+            type: 'progress',
+            step: ev.step,
+            message: ev.message,
+            provider: ev.provider,
+            ok: ev.ok,
+            pct: ev.pct,
+          })
+      );
       payload = enriched.payload;
       raw = enriched.raw;
       providerUsed = enriched.providerUsed;
@@ -762,6 +983,14 @@ export async function POST(request: Request) {
       },
     });
 
+    payload = attachSources(payload, {
+      sportsDbOk: Boolean(payload.sportsDb?.matchedEvent),
+      formOk: Boolean(payload.form?.available),
+      footballDataOk: Boolean(
+        payload.footballData?.matchId || payload.footballData?.standingsHome
+      ),
+    });
+
     const analysis = await prisma.analysis.create({
       data: {
         mode: AnalysisMode.ACCUMULATOR,
@@ -779,14 +1008,24 @@ export async function POST(request: Request) {
       include: { accumulator: true, match: true },
     });
 
-    if (keysByProvider[providerUsed]) {
+    if (keysByProvider[providerUsed] && payload.llmUsed) {
       await prisma.apiKey.updateMany({
         where: { userId: auth.user.id, provider: providerUsed },
         data: { lastUsed: new Date() },
       });
     }
 
-    return NextResponse.json({ analysis, payload });
+    void mqPublish({
+      routingKey: 'analysis.completed',
+      key: analysis.id,
+      payload: {
+        analysisId: analysis.id,
+        mode: 'ACCUMULATOR',
+        provider: providerUsed,
+      },
+    });
+
+    return NextResponse.json({ analysis, payload, progressLog });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.flatten() }, { status: 400 });

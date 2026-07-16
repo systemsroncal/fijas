@@ -1,7 +1,7 @@
 """
 Orquestador de scraping WPS Admin.
 
-Ejecuta scrapers de 14 sitios y envía resultados al backend
+Ejecuta scrapers de todas las fuentes registradas y envía resultados al backend
 POST /api/scraping/ingest con header X-API-Secret.
 """
 

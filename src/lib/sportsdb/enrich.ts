@@ -74,6 +74,9 @@ function fallbackForm(): TeamFormBlock {
     avgCards: null,
     sampleSize: 0,
     rows: [],
+    h2h: [],
+    homeSeason: [],
+    awaySeason: [],
   };
 }
 

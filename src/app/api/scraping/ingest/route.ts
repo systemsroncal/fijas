@@ -5,6 +5,7 @@ import { validateApiSecret } from '@/lib/api-guard';
 import { buildMatchKey } from '@/lib/match-key';
 import { isJunkMatch, repairMisparsedMatch } from '@/lib/match-display';
 import { LogCategory, Prisma } from '@prisma/client';
+import { mqPublish } from '@/lib/mq/bus';
 
 const predictionSchema = z.object({
   externalId: z.string().nullish(),
@@ -177,6 +178,16 @@ export async function POST(request: Request) {
         category: LogCategory.SCRAPING,
         message: `Ingest ${data.sourceSlug}: ${inserted} predictions`,
         meta: { inserted, sourceSlug: data.sourceSlug },
+      },
+    });
+
+    void mqPublish({
+      routingKey: 'scraping.ingest',
+      key: data.sourceSlug,
+      payload: {
+        sourceSlug: data.sourceSlug,
+        inserted,
+        at: new Date().toISOString(),
       },
     });
 

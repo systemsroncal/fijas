@@ -80,6 +80,55 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
     );
   }
 
+  const h2h = form?.h2h?.filter((r) => r.score) ?? [];
+  if (h2h.length > 0) {
+    bullets.push(
+      `H2H previos: ${h2h
+        .slice(0, 5)
+        .map((r) => `${r.label} ${r.score}${r.date ? ` (${r.date})` : ''}`)
+        .join(' · ')}.`
+    );
+  } else {
+    bullets.push('Sin enfrentamientos directos (H2H) con marcador en la base.');
+  }
+
+  const homeS = form?.homeSeason?.filter((r) => r.score) ?? [];
+  const awayS = form?.awaySeason?.filter((r) => r.score) ?? [];
+  if (homeS.length > 0 && m) {
+    bullets.push(
+      `Forma temporada ${m.homeTeam}: ${homeS
+        .slice(0, 5)
+        .map((r) => r.score)
+        .join(', ')}.`
+    );
+  }
+  if (awayS.length > 0 && m) {
+    bullets.push(
+      `Forma temporada ${m.awayTeam}: ${awayS
+        .slice(0, 5)
+        .map((r) => r.score)
+        .join(', ')}.`
+    );
+  }
+
+  if (payload.aiCascade?.neuralOnly) {
+    bullets.push(
+      'Motor: análisis neuronal (solo modelo) — ninguna IA externa respondió o no hay keys.'
+    );
+  } else if (payload.llmUsed && payload.llmProvider) {
+    bullets.push(`Motor: IA ${payload.llmProvider} (enriquecimiento narrativo).`);
+  }
+
+  const fd = payload.footballData;
+  if (fd) {
+    if (fd.standingsHome || fd.standingsAway) {
+      bullets.push(
+        `Clasificación football-data.org: local #${fd.standingsHome?.position ?? '?'} (${fd.standingsHome?.points ?? '?'} pts) · visitante #${fd.standingsAway?.position ?? '?'} (${fd.standingsAway?.points ?? '?'} pts).`
+      );
+    }
+    if (fd.score) bullets.push(`Marcador API football-data.org: ${fd.score} (${fd.status}).`);
+  }
+
   bullets.push(
     `Mercados: ${bookMarkets.length} con cuota de casa, ${impliedMarkets.length} con cuota implícita del modelo.`
   );
@@ -115,7 +164,17 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
       'Modelo Poisson (probabilidades resultado / O-U / BTTS)',
       bookMarkets.length > 0 ? 'Cuotas scrapeadas de casa' : 'Sin cuotas de casa en este partido',
       form?.available ? 'Marcadores históricos scrapeados en BD' : 'Sin historial de marcadores en BD',
+      h2h.length > 0 ? `H2H (${h2h.length} encuentros)` : 'Sin H2H en BD',
+      homeS.length || awayS.length
+        ? 'Forma de temporada/torneo (marcadores scrapeados)'
+        : 'Sin forma de temporada en BD',
+      payload.footballData
+        ? 'football-data.org (tabla/fixtures)'
+        : 'Sin football-data.org en este análisis',
       tipLabel && tipLabel !== '—' ? 'Tip de fuente de scraping' : 'Sin tip de scraping',
+      payload.llmUsed
+        ? `IA ${payload.llmProvider}`
+        : 'Análisis neuronal sin IA (solo modelo)',
     ],
     limitations: [
       'No se inventan tiros a puerta, goleadores ni props de jugador.',

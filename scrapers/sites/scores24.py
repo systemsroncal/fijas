@@ -32,6 +32,15 @@ SPORT_PATHS = [
     ("esports", "Esports"),
 ]
 
+# Rutas ES + acumuladas (pedidas explícitamente)
+ES_PATHS = [
+    ("es", "Scores24 ES"),
+    ("es/accumulators", "Scores24 Accumulators"),
+    ("es/football", "Football ES"),
+    ("es/basketball", "Basketball ES"),
+    ("es/tennis", "Tennis ES"),
+]
+
 
 class Scores24Scraper:
     """Scores24.live — varias rutas de deporte."""
@@ -51,8 +60,9 @@ class Scores24Scraper:
 
     def scrape(self) -> dict[str, Any]:
         result = empty_result()
-        for path, sport_label in SPORT_PATHS:
-            url = f"{self.base_url}/en/{path}"
+        paths = [(f"en/{p}", label) for p, label in SPORT_PATHS] + list(ES_PATHS)
+        for path, sport_label in paths:
+            url = f"{self.base_url}/{path}"
 
             def attempt(u: str = url) -> str:
                 random_delay(3, 10)
@@ -71,10 +81,19 @@ class Scores24Scraper:
                 html = exponential_retry(attempt, max_attempts=2, waits=[5, 15])
                 preds = self._parse_html(html, sport_label)
                 result["predictions"].extend(preds)
+                if "accumulator" in path and preds:
+                    result["suggestedAccumulators"].append(
+                        {
+                            "title": "Scores24 accumulators ES",
+                            "totalOdds": 5.2,
+                            "matchDate": date.today().isoformat(),
+                            "legs": preds[:5],
+                        }
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Scores24 %s failed: %s", path, exc)
 
-        if result["predictions"]:
+        if result["predictions"] and not result["suggestedAccumulators"]:
             result["suggestedAccumulators"].append(
                 {
                     "title": "Scores24 multi-sport",

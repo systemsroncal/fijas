@@ -1,0 +1,14 @@
+---
+description: Auto-routing Kafka / RabbitMQ / football-data en fijas
+globs:
+alwaysApply: true
+---
+
+# Skill routing (fijas)
+
+Antes de implementar colas o APIs de fútbol:
+
+- **Kafka** (topics, kafkajs, consumer groups, event streaming) → leer `~/.cursor/skills/kafka/SKILL.md`
+- **RabbitMQ** (AMQP, exchanges, queues, amqplib, ack/nack, DLQ) → leer `~/.cursor/skills/rabbitmq/SKILL.md`
+- **football-data.org** → `FOOTBALL_DATA_API_TOKEN` en env; cliente en `src/lib/football-data/`; docs https://www.football-data.org/documentation/quickstart
+- **Seguridad**: nunca commitear tokens; solo `.env.local` / secrets del host

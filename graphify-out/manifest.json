@@ -40,14 +40,14 @@
     "semantic_hash": "6db2da76cbfcb21e2110e3ac120cdd21"
   },
   "package.json": {
-    "mtime": 1784071271.1365569,
-    "ast_hash": "8161255373b3daf6e80ff124f178113c",
+    "mtime": 1784177041.756893,
+    "ast_hash": "308dafb7184b13a85d2711ad58722f3f",
     "semantic_hash": ""
   },
   "prisma/seed.ts": {
-    "mtime": 1783732469.9135845,
-    "ast_hash": "18df807650ccdbb7955b5891e6877ba4",
-    "semantic_hash": "18df807650ccdbb7955b5891e6877ba4"
+    "mtime": 1784177000.8298154,
+    "ast_hash": "8b4c387c6ad1ed27a7961597a44712f6",
+    "semantic_hash": ""
   },
   "react-mui-sidebar.d.ts": {
     "mtime": 1783706694.5898802,
@@ -55,14 +55,14 @@
     "semantic_hash": "0c48f9e8974f7d1bdda8bbb86a1eea44"
   },
   "scrapers/main.py": {
-    "mtime": 1783721287.0054157,
-    "ast_hash": "725915ad6b12d14dc181696b459a2176",
-    "semantic_hash": "725915ad6b12d14dc181696b459a2176"
+    "mtime": 1784176480.3954058,
+    "ast_hash": "9ef400ec10365dad0cabc3639d16d109",
+    "semantic_hash": ""
   },
   "scrapers/sites/__init__.py": {
-    "mtime": 1783721287.0054157,
-    "ast_hash": "ccda5dfa822a22914530a6d363939c95",
-    "semantic_hash": "ccda5dfa822a22914530a6d363939c95"
+    "mtime": 1784176997.8886552,
+    "ast_hash": "4f9b535cc081a8e9f9f2a289864142f3",
+    "semantic_hash": ""
   },
   "scrapers/sites/base.py": {
     "mtime": 1783721286.9424198,
@@ -100,9 +100,9 @@
     "semantic_hash": "f3d4c00d219ce1bef856c23bb284b3ed"
   },
   "scrapers/sites/predictz.py": {
-    "mtime": 1783721287.1044288,
-    "ast_hash": "16b82b30860ef4dda7b89b582bad85f3",
-    "semantic_hash": "16b82b30860ef4dda7b89b582bad85f3"
+    "mtime": 1784176463.0871842,
+    "ast_hash": "4504659ec3b0bed849202f42074a5f21",
+    "semantic_hash": ""
   },
   "scrapers/sites/safertip.py": {
     "mtime": 1784063928.610425,
@@ -110,9 +110,9 @@
     "semantic_hash": "e975d4ce6960ed428c20ebd8b66432e8"
   },
   "scrapers/sites/scores24.py": {
-    "mtime": 1783991537.4695494,
-    "ast_hash": "d74fd7d5d5cf62ef23ce2e98b1a7545f",
-    "semantic_hash": "d74fd7d5d5cf62ef23ce2e98b1a7545f"
+    "mtime": 1784176469.1185148,
+    "ast_hash": "1fe6bcc8bc030c1064ff9a9264cdbbfe",
+    "semantic_hash": ""
   },
   "scrapers/sites/soccer24.py": {
     "mtime": 1783721287.0054157,
@@ -140,9 +140,9 @@
     "semantic_hash": "fe8d3cfd503f45f7ef330fa595bf6e77"
   },
   "scrapers/sites/windrawwin.py": {
-    "mtime": 1783721287.116449,
-    "ast_hash": "0b89ce7fd98565ee8d6083f2df1e0597",
-    "semantic_hash": "0b89ce7fd98565ee8d6083f2df1e0597"
+    "mtime": 1784176472.060266,
+    "ast_hash": "e59f4829dacda3dd2610cdf6c6a5dad5",
+    "semantic_hash": ""
   },
   "scrapers/tests/test_base.py": {
     "mtime": 1783721287.0284271,
@@ -205,9 +205,9 @@
     "semantic_hash": "51d7ff4f3eb8f95522746334aeaa2855"
   },
   "src/app/(DashboardLayout)/analyses/page.tsx": {
-    "mtime": 1784070159.713135,
-    "ast_hash": "d98d87aeb2c9fac387263a1f19daa2c9",
-    "semantic_hash": "d98d87aeb2c9fac387263a1f19daa2c9"
+    "mtime": 1784176670.882993,
+    "ast_hash": "df13e806055532aeef28d229c1688308",
+    "semantic_hash": ""
   },
   "src/app/(DashboardLayout)/components/container/PageContainer.tsx": {
     "mtime": 1783706694.5948868,
@@ -365,9 +365,9 @@
     "semantic_hash": "b2771d9e9518185bd36f1af45e5893d6"
   },
   "src/app/api/analyses/route.ts": {
-    "mtime": 1784070300.9188015,
-    "ast_hash": "237fe4333fd14d55ddd055b1a0e3c319",
-    "semantic_hash": "237fe4333fd14d55ddd055b1a0e3c319"
+    "mtime": 1784176975.5079162,
+    "ast_hash": "8a2b3a8ffab080b484cc2aa65fc02c8c",
+    "semantic_hash": ""
   },
   "src/app/api/api-keys/route.ts": {
     "mtime": 1783721287.0054157,
@@ -415,9 +415,9 @@
     "semantic_hash": "ec9fe5dd2e614cde80a371cb3fb1327c"
   },
   "src/app/api/scraping/ingest/route.ts": {
-    "mtime": 1784070291.6757896,
-    "ast_hash": "8491046251fd35d14f0008ef2ffb0ba1",
-    "semantic_hash": "8491046251fd35d14f0008ef2ffb0ba1"
+    "mtime": 1784176995.5075972,
+    "ast_hash": "68834dfb9f8a9d8f5a87d20a930fac90",
+    "semantic_hash": ""
   },
   "src/app/api/setup/route.ts": {
     "mtime": 1783730699.6019604,
@@ -490,9 +490,9 @@
     "semantic_hash": "dbfd6abf2f80ea39b5a7cb9aa930f88e"
   },
   "src/components/analysis/MatchAnalysisDashboard.tsx": {
-    "mtime": 1784070493.5670009,
-    "ast_hash": "f1b9fb9ec6c6304e03a02bf68cd4f349",
-    "semantic_hash": "f1b9fb9ec6c6304e03a02bf68cd4f349"
+    "mtime": 1784176691.0753438,
+    "ast_hash": "9552d2410f272da3af69792d42c3bddd",
+    "semantic_hash": ""
   },
   "src/components/analysis/MatchResultStatsPanel.tsx": {
     "mtime": 1784069062.5409603,
@@ -500,14 +500,14 @@
     "semantic_hash": "77591d295a883da9a1abf46efa506d6d"
   },
   "src/lib/ai/analysis-brief.ts": {
-    "mtime": 1783989055.4980693,
-    "ast_hash": "ed3606a729fffc5b85b7dfcc3a502ac8",
-    "semantic_hash": "ed3606a729fffc5b85b7dfcc3a502ac8"
+    "mtime": 1784177070.0994122,
+    "ast_hash": "2a9146bc4858ecef900eb2542c6ed063",
+    "semantic_hash": ""
   },
   "src/lib/ai/analysis-types.ts": {
-    "mtime": 1784068975.5743866,
-    "ast_hash": "bc7d8905e14dd143ddac93706fe0c5a9",
-    "semantic_hash": "bc7d8905e14dd143ddac93706fe0c5a9"
+    "mtime": 1784176951.524969,
+    "ast_hash": "0a931c56b148b4abc21953b48f40737c",
+    "semantic_hash": ""
   },
   "src/lib/ai/football-model.ts": {
     "mtime": 1784057452.1253421,
@@ -525,9 +525,9 @@
     "semantic_hash": "a57966f0852dadc7c4a2748252c2d8f9"
   },
   "src/lib/ai/structured-analysis.ts": {
-    "mtime": 1784068991.9263537,
-    "ast_hash": "4280e74f464fe3fdefb4998b83f7c0b7",
-    "semantic_hash": "4280e74f464fe3fdefb4998b83f7c0b7"
+    "mtime": 1784176550.1183908,
+    "ast_hash": "c7a94a61480ed82d190224670de762e0",
+    "semantic_hash": ""
   },
   "src/lib/api-guard.ts": {
     "mtime": 1783721287.1044288,
@@ -595,9 +595,9 @@
     "semantic_hash": "b154347bbb29d9e953e1488ac488aa96"
   },
   "src/lib/sportsdb/enrich.ts": {
-    "mtime": 1784053512.3909588,
-    "ast_hash": "6722ce17dbc5e368ef5df23c25c2870c",
-    "semantic_hash": "6722ce17dbc5e368ef5df23c25c2870c"
+    "mtime": 1784176794.5043242,
+    "ast_hash": "70d293d9b464b8d63a10bc5ed50211ce",
+    "semantic_hash": ""
   },
   "src/lib/sportsdb/kickoff.ts": {
     "mtime": 1784064599.158113,
@@ -753,5 +753,85 @@
     "mtime": 1783706694.5888803,
     "ast_hash": "61c6b19abff40ea7acd577be818f3976",
     "semantic_hash": "61c6b19abff40ea7acd577be818f3976"
+  },
+  "scrapers/sites/cuotasahora.py": {
+    "mtime": 1784176384.5708282,
+    "ast_hash": "647e5650d142900b726b4fab683e0206",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/espn_yahoo.py": {
+    "mtime": 1784176449.6939113,
+    "ast_hash": "cb5f8ffb5362c308a8aa8c3029671034",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/fbref.py": {
+    "mtime": 1784176431.4154098,
+    "ast_hash": "0dea8b79b88558164bfcf9efbc5f29b5",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/flashscore.py": {
+    "mtime": 1784176380.490789,
+    "ast_hash": "e90bb1ef14ead7a2f830604c15627276",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/google_search.py": {
+    "mtime": 1784176449.6969388,
+    "ast_hash": "80036a9491abf61bc031b887d77ef53e",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/nba.py": {
+    "mtime": 1784176435.8090878,
+    "ast_hash": "53399689f2cbcbe9e1fef77a01459fb4",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/nfl.py": {
+    "mtime": 1784176443.2249868,
+    "ast_hash": "a0c7c8ceb7f7236f0bdb69e8e4d14032",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/scores365.py": {
+    "mtime": 1784176373.8557923,
+    "ast_hash": "ed3999d982d9e5c1a38935c84098d52a",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/sofascore.py": {
+    "mtime": 1784176382.5087898,
+    "ast_hash": "02336b4ad05ce93fa57823535099e22d",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/theanalyst.py": {
+    "mtime": 1784176384.2437897,
+    "ast_hash": "7fe266938086095e5038c5a4aaa2f162",
+    "semantic_hash": ""
+  },
+  "src/components/analysis/AnalysisProgressDialog.tsx": {
+    "mtime": 1784176620.101122,
+    "ast_hash": "825a3131fcde9aada7272f98e9ca9d66",
+    "semantic_hash": ""
+  },
+  "src/lib/ai/external-sources.ts": {
+    "mtime": 1784176997.2546017,
+    "ast_hash": "ced77b0c60fc932acd8020354dd38dcb",
+    "semantic_hash": ""
+  },
+  "scrapers/sites/football_data.py": {
+    "mtime": 1784176925.3061976,
+    "ast_hash": "5365653b46ed50fb9336d14c47d9ea0b",
+    "semantic_hash": ""
+  },
+  "src/lib/football-data/client.ts": {
+    "mtime": 1784177140.0723503,
+    "ast_hash": "de398f8d57518293854688f0eea97eb4",
+    "semantic_hash": ""
+  },
+  "src/lib/football-data/enrich.ts": {
+    "mtime": 1784176917.6006453,
+    "ast_hash": "dec91aec73a2d481dc470ec845d2b4b4",
+    "semantic_hash": ""
+  },
+  "src/lib/mq/bus.ts": {
+    "mtime": 1784176925.3391943,
+    "ast_hash": "f1d7a938ea03deb501185f6f2d0a1d57",
+    "semantic_hash": ""
   }
 }

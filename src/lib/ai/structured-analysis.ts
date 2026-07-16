@@ -13,6 +13,7 @@ import {
 } from '@/lib/ai/football-model';
 import { callProvider } from '@/lib/ai/providers';
 import type {
+  AiAttemptLog,
   AnalysisMarket,
   AnalysisPick,
   ProposedAccumulator,
@@ -181,6 +182,9 @@ export function emptyForm(message?: string): TeamFormBlock {
     avgCards: null,
     sampleSize: 0,
     rows: [],
+    h2h: [],
+    homeSeason: [],
+    awaySeason: [],
   };
 }
 
@@ -351,26 +355,27 @@ function extractJson(raw: string): unknown {
   return JSON.parse(match[0]);
 }
 
-/**
- * LLM de análisis profundo — SOLO el proveedor elegido (sin fallback silencioso a NVIDIA/otro).
- */
-export async function enrichPayloadWithLlm(
-  preferred: AiProvider,
-  keysByProvider: Partial<Record<AiProvider, string>>,
-  base: StructuredMatchPayload
-): Promise<{
-  payload: StructuredMatchPayload;
-  raw: string;
-  providerUsed: AiProvider;
-  promptUsed: string;
-}> {
-  const key = keysByProvider[preferred];
-  if (!key) {
-    throw new Error(
-      `No hay API key activa para ${preferred}. Configúrala en Ajustes → API keys y vuelve a analizar.`
-    );
-  }
+const PROVIDER_ORDER: AiProvider[] = [
+  'GEMINI',
+  'CLAUDE',
+  'NVIDIA',
+  'OPENAI',
+  'OPENROUTER',
+  'DEEPSEEK',
+  'GROK',
+  'MISTRAL',
+  'COHERE',
+];
 
+export type EnrichProgressFn = (event: {
+  step: string;
+  message: string;
+  provider?: string;
+  ok?: boolean;
+  pct?: number;
+}) => void;
+
+function buildDeepPrompt(base: StructuredMatchPayload): string {
   const liveHint =
     base.matchDiagnostics?.score ||
     base.accumulatorMeta?.liveContext?.length ||
@@ -378,17 +383,22 @@ export async function enrichPayloadWithLlm(
       ? '\nIMPORTANTE: hay marcador/estadísticas en vivo o FT. CONDICIONA el análisis a ese resultado actual.'
       : '';
 
-  const prompt = `Eres un analista profesional de apuestas. Analiza EN PROFUNDIDAD con los datos entregados.
+  const h2h = base.form?.h2h ?? [];
+  const homeSeason = base.form?.homeSeason ?? [];
+  const awaySeason = base.form?.awaySeason ?? [];
+
+  return `Eres un analista profesional de apuestas. Analiza EN PROFUNDIDAD con los datos entregados.
 
 Obligatorio:
 1) Cruza tip/cuotas scrapeadas + Poisson + TheSportsDB (forma) + matchDiagnostics (stats live/FT).
-2) Comenta posesión, tiros (totales/a puerta), córners, faltas, tarjetas si existen en teamStats.
-3) Comenta jugadores destacados de "players" (goles, asistencias, tarjetas, tiros a puerta mínimos).
-4) Si falta un dato (p.ej. tackles por jugador), dilo: la API free no lo trae; NO lo inventes.
-5) Evalúa 1X2, value/safe/risky y riesgos concretos.
-6) Si hay marcador live/FT, priorízalo sobre el pre-partido.
-7) Responde SOLO JSON válido:
-{"edgeText":"<análisis en español, 6-12 frases, con secciones cortas: Marcador/contexto, Stats equipo, Jugadores, Apuestas>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>","statHighlights":["<hallazgo 1>","<hallazgo 2>","<hallazgo 3>"]}
+2) Usa H2H históricos y forma de temporada/torneo (homeSeason/awaySeason) si existen; cita marcadores reales.
+3) Comenta posesión, tiros (totales/a puerta), córners, faltas, tarjetas si existen en teamStats.
+4) Comenta jugadores destacados de "players" (goles, asistencias, tarjetas, tiros a puerta mínimos).
+5) Si falta un dato (p.ej. tackles por jugador), dilo: la API free no lo trae; NO lo inventes.
+6) Evalúa 1X2, value/safe/risky y riesgos concretos.
+7) Si hay marcador live/FT, priorízalo sobre el pre-partido.
+8) Responde SOLO JSON válido:
+{"edgeText":"<análisis en español, 6-12 frases, con secciones: H2H/forma, Marcador, Stats, Jugadores, Apuestas>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>","statHighlights":["<hallazgo 1>","<hallazgo 2>","<hallazgo 3>"]}
 ${liveHint}
 
 Datos:
@@ -398,6 +408,9 @@ ${JSON.stringify({
     scoreline: base.scoreline,
     expected: base.expected,
     form: base.form,
+    h2h,
+    homeSeason,
+    awaySeason,
     sportsDb: base.sportsDb ?? null,
     matchDiagnostics: base.matchDiagnostics ?? null,
     markets: base.markets.slice(0, 12),
@@ -405,16 +418,14 @@ ${JSON.stringify({
     accumulatorMeta: base.accumulatorMeta ?? null,
     liveContext: base.accumulatorMeta?.liveContext ?? null,
   })}`;
+}
 
-  const raw = await callProvider(preferred, key, [
-    {
-      role: 'system',
-      content:
-        'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa matchDiagnostics si existe.',
-    },
-    { role: 'user', content: prompt },
-  ]);
-
+function applyLlmJson(
+  base: StructuredMatchPayload,
+  raw: string,
+  provider: AiProvider,
+  attempts: AiAttemptLog[]
+): StructuredMatchPayload {
   const data = extractJson(raw) as {
     edgeText?: string;
     confidenceDelta?: number;
@@ -440,17 +451,164 @@ ${JSON.stringify({
     ...base,
     deepAnalysis: true,
     llmUsed: true,
-    llmProvider: preferred,
+    llmProvider: provider,
+    aiCascade: {
+      preferred: attempts[0]?.provider ?? provider,
+      used: provider,
+      neuralOnly: false,
+      attempts,
+    },
     edgeSummary: `${cleaned}${hiBlock}${depth}`,
     confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 30, 92),
     disclaimer: base.disclaimer,
   };
   next.brief = buildAnalysisBrief(next);
+  return next;
+}
+
+/**
+ * LLM profundo con failover: preferido → otras keys activas → análisis neuronal (solo modelo).
+ */
+export async function enrichPayloadWithLlm(
+  preferred: AiProvider,
+  keysByProvider: Partial<Record<AiProvider, string>>,
+  base: StructuredMatchPayload,
+  onProgress?: EnrichProgressFn
+): Promise<{
+  payload: StructuredMatchPayload;
+  raw: string;
+  providerUsed: AiProvider;
+  promptUsed: string;
+  neuralOnly: boolean;
+  attempts: AiAttemptLog[];
+}> {
+  const prompt = buildDeepPrompt(base);
+  const attempts: AiAttemptLog[] = [];
+
+  const ordered: AiProvider[] = [
+    preferred,
+    ...PROVIDER_ORDER.filter((p) => p !== preferred),
+  ];
+  const withKeys = ordered.filter((p) => Boolean(keysByProvider[p]));
+
+  if (withKeys.length === 0) {
+    onProgress?.({
+      step: 'ai',
+      message: 'Sin API keys activas → análisis neuronal (solo modelo Poisson)',
+      pct: 88,
+    });
+    const neural: StructuredMatchPayload = {
+      ...base,
+      deepAnalysis: true,
+      llmUsed: false,
+      llmProvider: null,
+      aiCascade: {
+        preferred,
+        used: 'NEURAL',
+        neuralOnly: true,
+        attempts: [
+          {
+            provider: preferred,
+            status: 'skip',
+            detail: 'Sin key activa',
+          },
+        ],
+      },
+      edgeSummary: `${base.edgeSummary}\n\n[Neuronal] Sin IA externa: resultado del modelo Poisson + historial/H2H/TheSportsDB disponibles.`,
+    };
+    neural.brief = buildAnalysisBrief(neural);
+    return {
+      payload: neural,
+      raw: JSON.stringify(neural),
+      providerUsed: preferred,
+      promptUsed: 'neural-model-only',
+      neuralOnly: true,
+      attempts: neural.aiCascade!.attempts,
+    };
+  }
+
+  for (const provider of withKeys) {
+    const key = keysByProvider[provider]!;
+    attempts.push({ provider, status: 'trying' });
+    onProgress?.({
+      step: 'ai',
+      message: `Consultando IA: ${provider}…`,
+      provider,
+      pct: 70 + Math.min(15, attempts.length * 2),
+    });
+    try {
+      const raw = await callProvider(provider, key, [
+        {
+          role: 'system',
+          content:
+            'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa H2H, forma de temporada y matchDiagnostics si existen.',
+        },
+        { role: 'user', content: prompt },
+      ]);
+      attempts[attempts.length - 1] = {
+        provider,
+        status: 'ok',
+        detail: 'Respuesta recibida',
+      };
+      onProgress?.({
+        step: 'ai',
+        message: `${provider} respondió OK`,
+        provider,
+        ok: true,
+        pct: 92,
+      });
+      const payload = applyLlmJson(base, raw, provider, attempts);
+      // preferred en cascade
+      if (payload.aiCascade) {
+        payload.aiCascade.preferred = preferred;
+      }
+      return {
+        payload,
+        raw,
+        providerUsed: provider,
+        promptUsed: prompt,
+        neuralOnly: false,
+        attempts,
+      };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message.slice(0, 180) : 'Error';
+      attempts[attempts.length - 1] = { provider, status: 'fail', detail };
+      onProgress?.({
+        step: 'ai',
+        message: `${provider} no respondió → siguiente…`,
+        provider,
+        ok: false,
+        pct: 70 + Math.min(15, attempts.length * 2),
+      });
+    }
+  }
+
+  onProgress?.({
+    step: 'ai',
+    message: 'Todas las IA fallaron → análisis neuronal (solo modelo)',
+    pct: 90,
+  });
+  const neural: StructuredMatchPayload = {
+    ...base,
+    deepAnalysis: true,
+    llmUsed: false,
+    llmProvider: null,
+    aiCascade: {
+      preferred,
+      used: 'NEURAL',
+      neuralOnly: true,
+      attempts,
+    },
+    edgeSummary: `${base.edgeSummary}\n\n[Neuronal] IAs no disponibles. Se entrega el modelo Poisson + H2H/forma/TheSportsDB sin narrativa LLM.`,
+  };
+  neural.brief = buildAnalysisBrief(neural);
   return {
-    payload: next,
-    raw,
+    payload: neural,
+    raw: JSON.stringify(neural),
     providerUsed: preferred,
-    promptUsed: prompt,
+    promptUsed: 'neural-model-only-after-failover',
+    neuralOnly: true,
+    attempts,
   };
 }
 

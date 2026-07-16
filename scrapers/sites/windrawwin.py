@@ -13,7 +13,13 @@ class WinDrawWinScraper(GenericTipsScraper):
 
     slug = "windrawwin"
     base_url = "https://www.windrawwin.com"
-    day_paths = ["/predictions/", "/predictions/tomorrow/"]
+    day_paths = [
+        "/predictions/",
+        "/predictions/today/",
+        "/predictions/tomorrow/",
+        "/predictions/football/",
+        "/predictions/basketball/",
+    ]
 
     def scrape(self) -> dict[str, Any]:
         result = super().scrape()

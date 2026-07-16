@@ -269,7 +269,14 @@ export default function MatchAnalysisDashboard({
                   {sportLabel((m?.sport as SportKind) ?? 'football')} · {m?.league ?? 'Scanner'} ·{' '}
                   {payload.mode}
                 </Typography>
-                {payload.llmUsed ? (
+                {payload.aiCascade?.neuralOnly || (!payload.llmUsed && payload.aiCascade) ? (
+                  <Chip
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    label="Neuronal (sin IA)"
+                  />
+                ) : payload.llmUsed ? (
                   <Chip
                     size="small"
                     color="success"
@@ -579,6 +586,70 @@ export default function MatchAnalysisDashboard({
               </Alert>
             )}
           </Box>
+
+          {(payload.form?.h2h?.length ||
+            payload.form?.homeSeason?.length ||
+            payload.form?.awaySeason?.length) && (
+            <Box>
+              <Typography fontWeight={700} gutterBottom>
+                H2H y forma de temporada/torneo
+              </Typography>
+              <Stack spacing={1.5}>
+                {payload.form?.h2h && payload.form.h2h.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Enfrentamientos previos (H2H)
+                    </Typography>
+                    <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                      {payload.form.h2h.map((r) => (
+                        <Chip
+                          key={`h2h-${r.matchId}`}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          label={`${r.date}: ${r.label} ${r.score ?? ''}`}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
+                {payload.form?.homeSeason && payload.form.homeSeason.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Forma reciente · {m?.homeTeam ?? 'Local'}
+                    </Typography>
+                    <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                      {payload.form.homeSeason.map((r) => (
+                        <Chip
+                          key={`hs-${r.matchId}`}
+                          size="small"
+                          label={`${r.score ?? '—'} (${r.date})`}
+                          variant="outlined"
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
+                {payload.form?.awaySeason && payload.form.awaySeason.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Forma reciente · {m?.awayTeam ?? 'Visitante'}
+                    </Typography>
+                    <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                      {payload.form.awaySeason.map((r) => (
+                        <Chip
+                          key={`as-${r.matchId}`}
+                          size="small"
+                          label={`${r.score ?? '—'} (${r.date})`}
+                          variant="outlined"
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
+              </Stack>
+            </Box>
+          )}
 
           {payload.relatedMatches && payload.relatedMatches.length > 0 && (
             <Box>

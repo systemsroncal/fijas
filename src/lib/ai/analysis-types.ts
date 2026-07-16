@@ -52,6 +52,32 @@ export type TeamFormBlock = {
   avgCards: number | null;
   sampleSize: number;
   rows: FormMatchRow[];
+  /** Enfrentamientos directos (H2H) con marcador real */
+  h2h?: FormMatchRow[];
+  /** Forma reciente del local en temporada/torneo */
+  homeSeason?: FormMatchRow[];
+  /** Forma reciente del visitante en temporada/torneo */
+  awaySeason?: FormMatchRow[];
+};
+
+/** Intento de IA durante el análisis (para el popup en vivo). */
+export type AiAttemptLog = {
+  provider: string;
+  status: 'trying' | 'ok' | 'fail' | 'skip';
+  detail?: string;
+};
+
+export type AnalysisProgressEvent = {
+  type: 'progress' | 'done' | 'error';
+  step?: string;
+  message: string;
+  source?: string;
+  provider?: string;
+  ok?: boolean;
+  pct?: number;
+  analysis?: unknown;
+  payload?: unknown;
+  aiAttempts?: AiAttemptLog[];
 };
 
 export type RelatedMatchRow = {
@@ -156,9 +182,30 @@ export type StructuredMatchPayload = {
     notes: string[];
   };
   deepAnalysis?: boolean;
-  /** true solo si el LLM del proveedor elegido respondió de verdad */
+  /** true solo si algún LLM respondió de verdad */
   llmUsed?: boolean;
   llmProvider?: string | null;
+  /** Cadena de intentos IA → neuronal */
+  aiCascade?: {
+    preferred: string;
+    used: string;
+    neuralOnly: boolean;
+    attempts: AiAttemptLog[];
+  };
+  /** Fuentes externas consultadas en este análisis */
+  externalSources?: Array<{ name: string; status: 'ok' | 'skip' | 'fail'; detail?: string }>;
+  /** Contexto football-data.org (plan free) */
+  footballData?: {
+    source: 'football-data.org';
+    usedRequests: number;
+    matchId: number | null;
+    status: string | null;
+    score: string | null;
+    competition: string | null;
+    standingsHome: { position: number; points: number; form: string | null } | null;
+    standingsAway: { position: number; points: number; form: string | null } | null;
+    notes: string[];
+  };
   /** Diagnósticos live/FT (equipo + jugadores desde TheSportsDB) */
   matchDiagnostics?: {
     phase: string;

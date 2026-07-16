@@ -23,7 +23,8 @@ import {
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import { AI_PROVIDERS } from '@/lib/ai/providers-client';
 import MatchAnalysisDashboard from '@/components/analysis/MatchAnalysisDashboard';
-import type { StructuredMatchPayload } from '@/lib/ai/analysis-types';
+import AnalysisProgressDialog from '@/components/analysis/AnalysisProgressDialog';
+import type { AnalysisProgressEvent, StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { isJunkMatch } from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
 
@@ -106,6 +107,8 @@ export default function AnalysesPage() {
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   /** Contexto del análisis abierto (para Reanalizar) */
   const [activeAnalysis, setActiveAnalysis] = useState<Analysis | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressEvents, setProgressEvents] = useState<AnalysisProgressEvent[]>([]);
 
   const pendingAccumulators = useMemo(
     () => accumulators.filter((a) => !a.isAnalyzed),
@@ -196,12 +199,14 @@ export default function AnalysesPage() {
     }
 
     setRunning(true);
+    setProgressEvents([]);
+    setProgressOpen(true);
     if (override?.matchId) {
       setMode('MATCH');
       setMatchId(override.matchId);
     }
 
-    // enrich=true → LLM profundo. force=true → reanalizar combinada ya analizada.
+    // enrich=true → LLM profundo con failover. force=true → reanalizar combinada ya analizada.
     const body =
       activeMode === 'MATCH'
         ? { mode: 'MATCH', matchId: activeMatchId, provider, enrich: true }
@@ -222,10 +227,20 @@ export default function AnalysesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90_000),
+        signal: AbortSignal.timeout(120_000),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        setProgressEvents((prev) => [
+          ...prev,
+          {
+            type: 'error',
+            message:
+              typeof data.error === 'string'
+                ? data.error
+                : `Análisis fallido (${res.status})`,
+          },
+        ]);
         setError(
           typeof data.error === 'string'
             ? data.error
@@ -233,6 +248,38 @@ export default function AnalysesPage() {
         );
         return;
       }
+
+      const serverProgress = Array.isArray(data.progressLog)
+        ? (data.progressLog as AnalysisProgressEvent[])
+        : [];
+      const cascade = (data.payload as StructuredMatchPayload | undefined)?.aiCascade;
+      const cascadeEvents: AnalysisProgressEvent[] =
+        cascade?.attempts?.map((a) => ({
+          type: 'progress' as const,
+          step: 'ai',
+          provider: a.provider,
+          ok: a.status === 'ok',
+          message:
+            a.status === 'ok'
+              ? `${a.provider} respondió`
+              : a.status === 'fail'
+                ? `${a.provider} falló: ${a.detail ?? ''}`
+                : `${a.provider}: ${a.detail ?? a.status}`,
+          pct: a.status === 'ok' ? 92 : undefined,
+        })) ?? [];
+      if (cascade?.neuralOnly) {
+        cascadeEvents.push({
+          type: 'progress',
+          step: 'ai',
+          message: 'Fallback → análisis neuronal (solo modelo)',
+          pct: 95,
+        });
+      }
+      setProgressEvents([
+        ...serverProgress,
+        ...cascadeEvents,
+        { type: 'done', message: 'Informe listo', pct: 100, payload: data.payload },
+      ]);
 
       const candidate = data.payload ?? data.analysis?.payload;
       if (isMatchDashboardPayload(candidate)) {
@@ -244,8 +291,12 @@ export default function AnalysesPage() {
 
       const a = data.analysis as Analysis | undefined;
       if (a) setActiveAnalysis(a);
+      const engine =
+        cascade?.neuralOnly
+          ? 'Neuronal (sin IA)'
+          : cascade?.used || a?.iaProvider || provider;
       setResultMsg(
-        `${force || override?.matchId ? 'Reanálisis' : 'Análisis'}: Riesgo ${a?.riskScore} · EV ${a?.evScore} · Stake ${a?.recommendedStake} · ${a?.iaProvider}`
+        `${force || override?.matchId ? 'Reanálisis' : 'Análisis'}: Riesgo ${a?.riskScore} · EV ${a?.evScore} · Stake ${a?.recommendedStake} · ${engine}`
       );
 
       if (activeMode === 'ACCUMULATOR' && !force) setAccumulatorId('');
@@ -254,15 +305,17 @@ export default function AnalysesPage() {
       await refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error de red al analizar';
+      setProgressEvents((prev) => [...prev, { type: 'error', message: msg }]);
       if (/abort|timeout/i.test(msg)) {
         setError(
-          'El análisis tardó más de 90s y se canceló. Prueba de nuevo o cambia de proveedor (NVIDIA suele ser más rápido).'
+          'El análisis tardó más de 120s y se canceló. Prueba de nuevo o cambia de proveedor (NVIDIA suele ser más rápido).'
         );
       } else {
         setError(msg);
       }
     } finally {
       setRunning(false);
+      window.setTimeout(() => setProgressOpen(false), 900);
     }
   };
 
@@ -324,9 +377,17 @@ export default function AnalysesPage() {
         Análisis profundo con IA
       </Typography>
       <Typography variant="body2" color="text.secondary" mb={2}>
-        Scraping (tips/cuotas) + TheSportsDB (calendario/forma) + modelo. La API free no se usa en
-        scrapers; solo al analizar partido, combinada o aleatorio.
+        Scraping (tips/cuotas de +20 fuentes) + TheSportsDB (calendario/forma/H2H) + modelo. Si la IA
+        elegida no responde, se prueba la siguiente key activa; si ninguna responde, análisis neuronal
+        (solo modelo).
       </Typography>
+
+      <AnalysisProgressDialog
+        open={progressOpen}
+        provider={provider}
+        events={progressEvents}
+        running={running}
+      />
 
       <Card sx={{ mb: 2 }}>
         <CardContent>
