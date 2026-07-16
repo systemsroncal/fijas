@@ -275,7 +275,7 @@ export default function AnalysesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(300_000),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -359,9 +359,9 @@ export default function AnalysesPage() {
       const msg = err instanceof Error ? err.message : 'Error de red al analizar';
       setProgressEvents((prev) => [...prev, { type: 'error', message: msg, pct: 100 }]);
       setProgressFailed(true);
-      if (/abort|timeout/i.test(msg)) {
+      if (/abort|timeout|timed out/i.test(msg)) {
         setError(
-          'El análisis tardó más de 180s y se canceló. Prueba otro proveedor o reintenta.'
+          'El análisis tardó demasiado en el navegador. Prueba «Red neuronal» para un resultado inmediato, o reintenta con otra IA.'
         );
       } else {
         setError(msg);

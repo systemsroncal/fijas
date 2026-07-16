@@ -177,19 +177,19 @@ export default function AnalysisProgressDialog({
     return () => window.clearTimeout(t);
   }, [open, running, sourceIdx, reduce, externalSources]);
 
-  // Heartbeat mientras espera IA (evita sensación de “congelado”)
+  // Heartbeat mientras espera IA (el progreso real llega al terminar el POST)
   useEffect(() => {
     if (!open || !running) return;
     const tick = window.setInterval(() => {
       setLines((prev) => [
-        ...prev,
+        ...prev.slice(-40),
         {
           id: `hb-${Date.now()}`,
-          text: `… esperando respuesta de ${provider} / fuentes (failover activo)`,
+          text: `… procesando en servidor (${provider} → failover → Red Neuronal si falla)`,
           tone: 'info',
         },
       ]);
-    }, 7000);
+    }, 12_000);
     return () => window.clearInterval(tick);
   }, [open, running, provider]);
 

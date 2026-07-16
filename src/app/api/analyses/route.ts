@@ -39,6 +39,9 @@ import {
 } from '@/lib/team-identity';
 import { summarizeTeamForm } from '@/lib/ai/form-stats';
 
+/** Vercel/Netlify: margen para cascada IA + fuentes externas */
+export const maxDuration = 300;
+
 function attachSources(
   payload: StructuredMatchPayload,
   extras?: { sportsDbOk?: boolean; formOk?: boolean; footballDataOk?: boolean }

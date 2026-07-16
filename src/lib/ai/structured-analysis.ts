@@ -491,10 +491,35 @@ const PROVIDER_ORDER: AiProvider[] = [
 /** Reintentos por proveedor antes de pasar al siguiente en la cascada. */
 export const MAX_ATTEMPTS_PER_PROVIDER = 3;
 
+/** Tiempo máximo por proveedor en cascada (incluye reintentos). */
+const CASCADE_PROVIDER_WALL_MS = 50_000;
+
+/** Timeout HTTP por llamada en cascada. */
+const CASCADE_HTTP_TIMEOUT_MS = 18_000;
+
 export type AnalysisProviderChoice = AiProvider | 'NEURAL';
 
 function waitMs(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+function callWithDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`${label}: tiempo agotado (${Math.round(ms / 1000)}s)`)),
+      ms
+    );
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
 }
 
 function pickDbProvider(keysByProvider: Partial<Record<AiProvider, string>>): AiProvider {
@@ -852,8 +877,31 @@ async function enrichPayloadWithLlmInner(
 
   for (const provider of withKeys) {
     const key = keysByProvider[provider]!;
+    const providerStart = Date.now();
+    let providerTimedOut = false;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_PROVIDER; attempt++) {
+      const elapsed = Date.now() - providerStart;
+      if (elapsed >= CASCADE_PROVIDER_WALL_MS) {
+        providerTimedOut = true;
+        attempts.push({
+          provider,
+          status: 'fail',
+          detail: `Tiempo de cascada agotado (${Math.round(CASCADE_PROVIDER_WALL_MS / 1000)}s)`,
+        });
+        onProgress?.({
+          step: 'ai',
+          message: `${provider} tiempo agotado → siguiente IA…`,
+          provider,
+          ok: false,
+          pct: 70 + Math.min(15, attempts.length * 2),
+        });
+        break;
+      }
+
+      const remaining = CASCADE_PROVIDER_WALL_MS - elapsed;
+      const callTimeout = Math.min(CASCADE_HTTP_TIMEOUT_MS, Math.max(8_000, remaining - 1_500));
+
       attempts.push({
         provider,
         status: 'trying',
@@ -872,14 +920,23 @@ async function enrichPayloadWithLlmInner(
         pct: 70 + Math.min(15, attempts.length * 2),
       });
       try {
-        const raw = await callProvider(provider, key, [
-          {
-            role: 'system',
-            content:
-              'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa H2H, forma de temporada y matchDiagnostics si existen.',
-          },
-          { role: 'user', content: prompt },
-        ]);
+        const raw = await callWithDeadline(
+          callProvider(
+            provider,
+            key,
+            [
+              {
+                role: 'system',
+                content:
+                  'Analista senior de fútbol/apuestas. JSON válido únicamente. Cero invención. Español. Usa H2H, forma de temporada y matchDiagnostics si existen.',
+              },
+              { role: 'user', content: prompt },
+            ],
+            { cascade: true, timeoutMs: callTimeout }
+          ),
+          remaining,
+          provider
+        );
         attempts[attempts.length - 1] = {
           provider,
           status: 'ok',
@@ -927,11 +984,13 @@ async function enrichPayloadWithLlmInner(
           ok: false,
           pct: 70 + Math.min(15, attempts.length * 2),
         });
-        if (hasRetry) {
-          await waitMs(1200 * attempt);
+        if (hasRetry && !providerTimedOut) {
+          await waitMs(600 * attempt);
         }
       }
     }
+
+    if (providerTimedOut) continue;
   }
 
   onProgress?.({

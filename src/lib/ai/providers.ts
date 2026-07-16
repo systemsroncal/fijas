@@ -92,6 +92,13 @@ export const AI_PROVIDERS: {
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
+export type CallProviderOptions = {
+  /** Modo cascada de análisis: fallar rápido para pasar a la siguiente IA */
+  cascade?: boolean;
+  /** Timeout HTTP por llamada (ms) */
+  timeoutMs?: number;
+};
+
 type ProviderConfig = {
   url: string;
   model: string;
@@ -324,7 +331,8 @@ async function callOpenAiCompatOnce(
   headers: Record<string, string>,
   body: unknown,
   provider: AiProvider,
-  extractText: (json: unknown) => string
+  extractText: (json: unknown) => string,
+  timeoutMs = 35_000
 ): Promise<string> {
   let res: Response;
   try {
@@ -332,13 +340,13 @@ async function callOpenAiCompatOnce(
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(35_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/abort|timeout/i.test(msg)) {
       throw new Error(
-        `${provider} no respondió en 35s. Revisa la key, el modelo o inténtalo de nuevo.`
+        `${provider} no respondió en ${Math.round(timeoutMs / 1000)}s. Revisa la key, el modelo o inténtalo de nuevo.`
       );
     }
     throw err;
@@ -369,13 +377,19 @@ async function callOpenAiCompatOnce(
 export async function callProvider(
   provider: AiProvider,
   apiKey: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  opts?: CallProviderOptions
 ): Promise<string> {
+  const cascade = opts?.cascade ?? false;
+  const timeoutMs = opts?.timeoutMs ?? (cascade ? 18_000 : 35_000);
   const config = PROVIDER_CONFIG[provider];
 
   if (provider === 'NVIDIA') {
     let lastErr: Error | null = null;
-    for (const model of NVIDIA_MODEL_FALLBACKS) {
+    const models = cascade
+      ? NVIDIA_MODEL_FALLBACKS.slice(0, 3)
+      : NVIDIA_MODEL_FALLBACKS;
+    for (const model of models) {
       try {
         return await callOpenAiCompatOnce(
           config.url,
@@ -387,14 +401,14 @@ export async function callProvider(
             max_tokens: 2048,
           },
           provider,
-          config.extractText
+          config.extractText,
+          timeoutMs
         );
       } catch (err) {
         const e = err as Error & { status?: number; body?: string };
         lastErr = e;
         const status = e.status ?? 0;
         const body = e.body ?? '';
-        // Timeout / DEGRADED / 429 / modelo ausente → siguiente free endpoint
         if (isNvidiaRetryableError(status, body, e.message)) {
           console.warn(`[NVIDIA] ${model} falló → siguiente:`, e.message.slice(0, 120));
           continue;
@@ -412,9 +426,12 @@ export async function callProvider(
     const body = config.buildBody(messages);
     let sawQuota = false;
     let lastErr: Error | null = null;
+    const models = cascade
+      ? GEMINI_MODEL_FALLBACKS.slice(0, 1)
+      : GEMINI_MODEL_FALLBACKS;
 
-    for (let i = 0; i < GEMINI_MODEL_FALLBACKS.length; i++) {
-      const model = GEMINI_MODEL_FALLBACKS[i];
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i];
       const url = geminiGenerateUrl(model, apiKey);
       try {
         return await callOpenAiCompatOnce(
@@ -422,7 +439,8 @@ export async function callProvider(
           config.buildHeaders(apiKey),
           body,
           provider,
-          config.extractText
+          config.extractText,
+          timeoutMs
         );
       } catch (err) {
         const e = err as Error & { status?: number; body?: string };
@@ -432,7 +450,7 @@ export async function callProvider(
 
         if (isQuotaError(status, errBody)) {
           sawQuota = true;
-          if (i === 0) {
+          if (!cascade && i === 0) {
             await wait(8_000);
             try {
               return await callOpenAiCompatOnce(
@@ -440,7 +458,8 @@ export async function callProvider(
                 config.buildHeaders(apiKey),
                 body,
                 provider,
-                config.extractText
+                config.extractText,
+                timeoutMs
               );
             } catch (retryErr) {
               lastErr = retryErr as Error & { status?: number; body?: string };
@@ -468,7 +487,8 @@ export async function callProvider(
     config.buildHeaders(apiKey),
     config.buildBody(messages),
     provider,
-    config.extractText
+    config.extractText,
+    timeoutMs
   );
 }
 
