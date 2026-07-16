@@ -10,6 +10,7 @@ import {
   buildRandomScannerPayload,
   emptyForm,
   enrichPayloadWithLlm,
+  refreshModelWithForm,
   StructuredMatchPayload,
 } from '@/lib/ai/structured-analysis';
 import { MatchContext } from '@/lib/ai/football-model';
@@ -35,6 +36,7 @@ import {
   sanitizeFormRows,
   teamNameSearchVariants,
 } from '@/lib/team-identity';
+import { summarizeTeamForm } from '@/lib/ai/form-stats';
 
 function attachSources(
   payload: StructuredMatchPayload,
@@ -256,6 +258,7 @@ async function loadTeamForm(
       date: m.matchDate.toISOString().slice(0, 10),
       score,
       tip,
+      league: m.league,
     };
     rowsRaw.push(row);
 
@@ -334,12 +337,23 @@ async function loadTeamForm(
     parts.push(`filtrados ${rowsRaw.length - cleaned.length} dup/categoría/outlier`);
   }
 
+  const homeForm = summarizeTeamForm(homeScored, homeTeam, {
+    maxRows: 8,
+    leagueHint: league,
+    excludeOpponent: awayTeam,
+  });
+  const awayForm = summarizeTeamForm(awayScored, awayTeam, {
+    maxRows: 8,
+    leagueHint: league,
+    excludeOpponent: homeTeam,
+  });
+
   return {
     available: true,
-    message: `Historial real: ${parts.join(', ')} (máx. muestra).`,
+    message: `Historial real: ${parts.join(', ')} (máx. muestra). Forma reciente pesa más que H2H.`,
     recentScores: withScore.map((r) => r.score!).slice(0, 10),
-    avgGoalsFor: null,
-    avgGoalsAgainst: null,
+    avgGoalsFor: homeForm?.avgGoalsFor ?? null,
+    avgGoalsAgainst: homeForm?.avgGoalsAgainst ?? null,
     avgGoalsTotal,
     cardsTotal: cardsSamples > 0 ? cardsTotal : null,
     avgCards:
@@ -349,6 +363,8 @@ async function loadTeamForm(
     h2h: h2hScored,
     homeSeason: homeScored,
     awaySeason: awayScored,
+    homeForm,
+    awayForm,
   };
 }
 
@@ -527,6 +543,9 @@ export async function POST(request: Request) {
         pct: 58,
       });
       payload = await applyFootballDataToPayload(payload);
+      if (payload.form?.available) {
+        payload = refreshModelWithForm(ctx, payload);
+      }
       if (payload.footballData) {
         emit({
           type: 'progress',

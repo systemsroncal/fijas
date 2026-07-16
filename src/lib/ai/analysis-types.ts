@@ -39,6 +39,16 @@ export type FormMatchRow = {
   date: string;
   score: string | null;
   tip: string | null;
+  league?: string | null;
+};
+
+export type TeamRecentFormStats = {
+  avgGoalsFor: number;
+  avgGoalsAgainst: number;
+  winRate: number;
+  drawRate: number;
+  lossRate: number;
+  sampleSize: number;
 };
 
 export type TeamFormBlock = {
@@ -58,6 +68,10 @@ export type TeamFormBlock = {
   homeSeason?: FormMatchRow[];
   /** Forma reciente del visitante en temporada/torneo */
   awaySeason?: FormMatchRow[];
+  /** Resumen forma local (últimos partidos, sin H2H) */
+  homeForm?: TeamRecentFormStats | null;
+  /** Resumen forma visitante (últimos partidos, sin H2H) */
+  awayForm?: TeamRecentFormStats | null;
 };
 
 /** Intento de IA durante el análisis (para el popup en vivo). */

@@ -883,6 +883,59 @@ export default function MatchAnalysisDashboard({
             )}
           </Box>
 
+          {(payload.form?.homeForm || payload.form?.awayForm) && (
+            <Box>
+              <Typography fontWeight={700} gutterBottom>
+                Comparativa forma reciente (prioridad del modelo)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+                Últimos partidos sin contar H2H directo. Pesa más que enfrentamientos históricos entre ambos.
+              </Typography>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                {[
+                  {
+                    label: m?.homeTeam ?? 'Local',
+                    stats: payload.form?.homeForm,
+                  },
+                  {
+                    label: m?.awayTeam ?? 'Visitante',
+                    stats: payload.form?.awayForm,
+                  },
+                ].map(({ label, stats }) =>
+                  stats ? (
+                    <Box
+                      key={label}
+                      sx={{
+                        flex: 1,
+                        p: 1.5,
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <Typography variant="subtitle2" gutterBottom>
+                        {label}
+                      </Typography>
+                      <Stack spacing={0.5}>
+                        <Typography variant="body2">
+                          GF {stats.avgGoalsFor} · GA {stats.avgGoalsAgainst}
+                        </Typography>
+                        <Typography variant="body2">
+                          V/E/D: {Math.round(stats.winRate * 100)}% /{' '}
+                          {Math.round(stats.drawRate * 100)}% /{' '}
+                          {Math.round(stats.lossRate * 100)}%
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Muestra ponderada: {stats.sampleSize} partidos
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  ) : null
+                )}
+              </Stack>
+            </Box>
+          )}
+
           {(payload.form?.h2h?.length ||
             payload.form?.homeSeason?.length ||
             payload.form?.awaySeason?.length) && (

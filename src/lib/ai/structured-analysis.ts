@@ -25,6 +25,7 @@ import type {
   TeamFormBlock,
 } from '@/lib/ai/analysis-types';
 import { buildAnalysisBrief, sanitizeNarrative } from '@/lib/ai/analysis-brief';
+import { applyFormToMatchContext } from '@/lib/ai/form-stats';
 import { applyContextFactorsToPayload } from '@/lib/ai/match-context-factors';
 import {
   areMarketsCompatible,
@@ -208,7 +209,8 @@ export function buildModelPayload(
   mode: 'MATCH' | 'RANDOM' = 'MATCH',
   extras?: { form?: TeamFormBlock; relatedMatches?: RelatedMatchRow[] }
 ): StructuredMatchPayload {
-  const probs = predictMatch(ctx);
+  const ctxWithForm = applyFormToMatchContext(ctx, extras?.form);
+  const probs = predictMatch(ctxWithForm);
   const sport = detectSport(ctx.league);
   const coreEdges = scanMatchEdges(ctx, probs);
   const sportEdges = scanSportSpecificEdges(sport, ctx, probs);
@@ -386,13 +388,55 @@ export function buildModelPayload(
     confidence,
     edgeSummary: `Mejor edge: ${
       bestEdge ? labelMarket(bestEdge.market, bestEdge.line, home, away) : 'N/A'
-    }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}.`,
+    }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}${
+      ctxWithForm.formHome && ctxWithForm.formAway
+        ? ` · Forma reciente (sin H2H): local GF ${ctxWithForm.formHome.avgGoalsFor}/GA ${ctxWithForm.formHome.avgGoalsAgainst} (${Math.round(ctxWithForm.formHome.winRate * 100)}% vict.) · visit. GF ${ctxWithForm.formAway.avgGoalsFor}/GA ${ctxWithForm.formAway.avgGoalsAgainst} (${Math.round(ctxWithForm.formAway.winRate * 100)}% vict.)`
+        : ''
+    }.`,
     disclaimer:
       'Análisis profundo: scraping + TheSportsDB (si hay match) + modelo Poisson. No se inventan marcadores, tiros ni props. Cuotas sin casa = implícitas del modelo. Árbitro/bajas/escenarios: API o inferidos; si no hay dato, se marca unknown.',
     model: probs,
   };
   payload.brief = buildAnalysisBrief(payload);
   return applyContextFactorsToPayload(payload);
+}
+
+/** Recalcula Poisson/mercados tras enriquecer forma (SportsDB, football-data). */
+export function refreshModelWithForm(
+  ctx: MatchContext & { id?: string },
+  payload: StructuredMatchPayload
+): StructuredMatchPayload {
+  const form = payload.form;
+  if (!form?.available) return payload;
+
+  const mode = payload.mode === 'ACCUMULATOR' ? 'MATCH' : payload.mode ?? 'MATCH';
+  const fresh = buildModelPayload(ctx, mode, {
+    form,
+    relatedMatches: payload.relatedMatches,
+  });
+
+  return {
+    ...payload,
+    form,
+    probs: fresh.probs,
+    scoreline: fresh.scoreline,
+    expected: {
+      ...fresh.expected,
+      cornersHome: payload.expected?.cornersHome ?? fresh.expected.cornersHome,
+      cornersAway: payload.expected?.cornersAway ?? fresh.expected.cornersAway,
+      note: payload.expected?.note ?? fresh.expected.note,
+    },
+    markets: fresh.markets,
+    picks: fresh.picks,
+    proposedAccumulators: fresh.proposedAccumulators,
+    confidence: fresh.confidence,
+    edgeSummary: fresh.edgeSummary,
+    model: fresh.model,
+    brief: fresh.brief,
+    referee: payload.referee ?? fresh.referee,
+    absences: payload.absences ?? fresh.absences,
+    scenarios: payload.scenarios ?? fresh.scenarios,
+  };
 }
 
 function extractJson(raw: string): unknown {
@@ -437,7 +481,7 @@ function buildDeepPrompt(base: StructuredMatchPayload): string {
 
 Obligatorio:
 1) Cruza tip/cuotas scrapeadas + Poisson + TheSportsDB (forma) + matchDiagnostics (stats live/FT).
-2) Usa H2H históricos y forma de temporada/torneo (homeSeason/awaySeason) si existen; cita marcadores reales.
+2) PRIORIZA forma reciente de temporada/torneo (homeForm/awayForm, homeSeason/awaySeason) sobre H2H antiguo; H2H solo como contexto secundario.
 3) Comenta posesión, tiros (totales/a puerta), córners, faltas, tarjetas si existen en teamStats.
 4) Comenta jugadores destacados de "players" (goles, asistencias, tarjetas, tiros a puerta mínimos).
 5) Si falta un dato (p.ej. tackles por jugador), dilo: la API free no lo trae; NO lo inventes.
@@ -460,6 +504,8 @@ ${JSON.stringify({
     h2h,
     homeSeason,
     awaySeason,
+    homeForm: base.form?.homeForm ?? null,
+    awayForm: base.form?.awayForm ?? null,
     sportsDb: base.sportsDb ?? null,
     matchDiagnostics: base.matchDiagnostics ?? null,
     referee: base.referee ?? null,

@@ -2,6 +2,7 @@
  * Enrich de análisis con football-data.org (standings + forma + marcador).
  */
 
+import { summarizeTeamForm } from '@/lib/ai/form-stats';
 import type { FormMatchRow, StructuredMatchPayload, TeamFormBlock } from '@/lib/ai/analysis-types';
 import {
   findMatchContext,
@@ -114,6 +115,20 @@ export async function applyFootballDataToPayload(
       ).slice(0, 12),
       homeSeason: mergedHome,
       awaySeason: mergedAway,
+      homeForm: mergedHome.length
+        ? summarizeTeamForm(mergedHome, match.homeTeam, {
+            maxRows: 8,
+            leagueHint: match.league,
+            excludeOpponent: match.awayTeam,
+          })
+        : formBase.homeForm ?? null,
+      awayForm: mergedAway.length
+        ? summarizeTeamForm(mergedAway, match.awayTeam, {
+            maxRows: 8,
+            leagueHint: match.league,
+            excludeOpponent: match.homeTeam,
+          })
+        : formBase.awayForm ?? null,
     };
 
     const ft = ctx.match ? scoreOf(ctx.match) : null;

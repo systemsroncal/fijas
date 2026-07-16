@@ -4,6 +4,7 @@
  * Docs: https://www.thesportsdb.com/documentation
  */
 
+import { summarizeTeamForm } from '@/lib/ai/form-stats';
 import type {
   FormMatchRow,
   StructuredMatchPayload,
@@ -338,7 +339,7 @@ export function mergeFormWithSportsDb(
     available: Boolean(recentScores.length || base.available),
     message:
       patch.available && base.available
-        ? 'Historia TheSportsDB + marcadores scrapeados. Misma categoría; alias deduplicados.'
+        ? 'Historia TheSportsDB + marcadores scrapeados. Forma reciente pesa más que H2H.'
         : patch.message ?? base.message,
     recentScores,
     avgGoalsTotal: patch.avgGoalsTotal ?? base.avgGoalsTotal,
@@ -347,6 +348,22 @@ export function mergeFormWithSportsDb(
     h2h,
     homeSeason,
     awaySeason,
+    homeForm:
+      ctx?.homeTeam && homeSeason.length
+        ? summarizeTeamForm(homeSeason, ctx.homeTeam, {
+            maxRows: 8,
+            leagueHint: ctx.league,
+            excludeOpponent: ctx.awayTeam,
+          })
+        : base.homeForm ?? null,
+    awayForm:
+      ctx?.awayTeam && awaySeason.length
+        ? summarizeTeamForm(awaySeason, ctx.awayTeam, {
+            maxRows: 8,
+            leagueHint: ctx.league,
+            excludeOpponent: ctx.homeTeam,
+          })
+        : base.awayForm ?? null,
   };
 }
 

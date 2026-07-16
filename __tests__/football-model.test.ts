@@ -31,6 +31,33 @@ describe('football-model', () => {
     expect(p.home).toBeGreaterThan(p.away);
   });
 
+  it('forma reciente puede invertir favorito vs tip local', () => {
+    const p = predictMatch({
+      homeTeam: 'U. Cluj',
+      awayTeam: 'Dyn. Kyiv',
+      league: 'UEL',
+      tip: '1',
+      formHome: {
+        avgGoalsFor: 0.33,
+        avgGoalsAgainst: 1.33,
+        winRate: 0,
+        drawRate: 0.67,
+        lossRate: 0.33,
+        sampleSize: 6,
+      },
+      formAway: {
+        avgGoalsFor: 1.67,
+        avgGoalsAgainst: 1,
+        winRate: 0.5,
+        drawRate: 0.33,
+        lossRate: 0.17,
+        sampleSize: 6,
+      },
+      h2hCount: 1,
+    });
+    expect(p.away).toBeGreaterThan(p.home);
+  });
+
   it('scanMatchEdges uses +goles labels', () => {
     const ctx = {
       homeTeam: 'A',

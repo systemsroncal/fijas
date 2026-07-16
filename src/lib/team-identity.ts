@@ -34,6 +34,14 @@ export function foldText(value: string): string {
     .trim();
 }
 
+/** Variantes ortográficas / abreviaturas frecuentes en scrapers. */
+function normalizeTeamTokens(folded: string): string {
+  return folded
+    .replace(/\bkyiv\b/g, 'kiev')
+    .replace(/\bdyn\b/g, 'dynamo')
+    .replace(/\buniversitatea\b/g, 'u');
+}
+
 /** Quita prefijos/sufijos de club sin tocar el núcleo del nombre. */
 export function stripClubNoise(name: string): string {
   let s = foldText(name);
@@ -43,7 +51,7 @@ export function stripClubNoise(name: string): string {
     if (next === s) break;
     s = next;
   }
-  return s;
+  return normalizeTeamTokens(s);
 }
 
 export function detectTeamCategory(

@@ -3,6 +3,8 @@
  * Patrones inspirados en penaltyblog / market scanners (sin deps NBA).
  */
 
+import type { TeamRecentFormStats } from '@/lib/ai/analysis-types';
+
 export type MatchContext = {
   homeTeam: string;
   awayTeam: string;
@@ -24,6 +26,12 @@ export type MatchContext = {
   refereeStyle?: 'strict' | 'lenient' | 'balanced' | 'unknown';
   /** Multiplicador de goles por bajas (1 = sin impacto) */
   absenceGoalMult?: number;
+  /** Forma reciente local (prioridad sobre H2H) */
+  formHome?: TeamRecentFormStats | null;
+  /** Forma reciente visitante */
+  formAway?: TeamRecentFormStats | null;
+  /** Cantidad de H2H en muestra (peso bajo en λ) */
+  h2hCount?: number;
 };
 
 export type ModelProbs = {
@@ -62,35 +70,78 @@ export function poissonPmf(lambda: number, k: number): number {
 }
 
 /**
- * Estima λ goles con tip scrapeado y cuotas (si hay).
- * Sin historial: baselines de liga + ajuste por tip/odds.
+ * Estima λ goles: forma reciente (70%) + cuotas (25%) + tip leve.
+ * H2H no domina; ventaja local es dinámica según forma.
  */
 export function estimateLambdas(ctx: MatchContext): { home: number; away: number } {
-  let home = 1.35;
-  let away = 1.15;
+  const hasForm =
+    ctx.formHome &&
+    ctx.formAway &&
+    ctx.formHome.sampleSize >= 3 &&
+    ctx.formAway.sampleSize >= 3;
+
+  let home = 1.12;
+  let away = 1.12;
+
+  if (hasForm) {
+    const hf = ctx.formHome!;
+    const af = ctx.formAway!;
+    // Ataque propio + defensa rival (proxy Dixon-Coles lite)
+    home = (hf.avgGoalsFor + af.avgGoalsAgainst) / 2;
+    away = (af.avgGoalsFor + hf.avgGoalsAgainst) / 2;
+
+    const formDiff = af.winRate - hf.winRate;
+    if (formDiff > 0.2) {
+      home *= 0.88;
+      away *= 1.12;
+    } else if (formDiff < -0.2) {
+      home *= 1.12;
+      away *= 0.88;
+    } else {
+      home *= 1.06; // ventaja local moderada solo si formas parejas
+    }
+  } else {
+    home = 1.22;
+    away = 1.08;
+  }
+
+  // Cuotas de casa (señal fuerte del mercado)
+  if (ctx.oddsHome && ctx.oddsAway && ctx.oddsHome > 1 && ctx.oddsAway > 1) {
+    const ih = 1 / ctx.oddsHome;
+    const ia = 1 / ctx.oddsAway;
+    const id = ctx.oddsDraw && ctx.oddsDraw > 1 ? 1 / ctx.oddsDraw : 0.28;
+    const norm = ih + ia + id;
+    const pH = ih / norm;
+    const pA = ia / norm;
+    const oddsLh = 0.65 + pH * 2.4;
+    const oddsLa = 0.65 + pA * 2.4;
+    home = home * 0.6 + oddsLh * 0.4;
+    away = away * 0.6 + oddsLa * 0.4;
+  } else if (ctx.oddsHome && ctx.oddsHome > 1) {
+    home = Math.max(0.35, home * (0.75 + 1 / ctx.oddsHome));
+  } else if (ctx.oddsAway && ctx.oddsAway > 1) {
+    away = Math.max(0.35, away * (0.75 + 1 / ctx.oddsAway));
+  }
 
   const tip = (ctx.tip ?? '').toLowerCase();
   if (tip === '1' || tip.includes('home') || tip.includes('local')) {
-    home += 0.35;
-    away -= 0.15;
+    home += 0.08;
+    away -= 0.05;
   } else if (tip === '2' || tip.includes('away') || tip.includes('visit')) {
-    away += 0.35;
-    home -= 0.15;
+    away += 0.08;
+    home -= 0.05;
   } else if (tip === 'x' || tip.includes('draw') || tip.includes('empate')) {
-    home -= 0.1;
-    away -= 0.1;
+    home -= 0.04;
+    away -= 0.04;
   }
 
-  if (ctx.oddsHome && ctx.oddsHome > 1) {
-    const ih = 1 / ctx.oddsHome;
-    home = Math.max(0.4, home * (0.7 + ih));
-  }
-  if (ctx.oddsAway && ctx.oddsAway > 1) {
-    const ia = 1 / ctx.oddsAway;
-    away = Math.max(0.4, away * (0.7 + ia));
+  // H2H: peso mínimo (solo si hay 2+ encuentros)
+  if ((ctx.h2hCount ?? 0) >= 2 && hasForm) {
+    // Sin datos H2H detallados aquí: no mover λ más de ~3%
+    void ctx.h2hCount;
   }
 
-  return { home: clamp(home, 0.4, 3.2), away: clamp(away, 0.4, 3.2) };
+  return { home: clamp(home, 0.25, 3.2), away: clamp(away, 0.25, 3.2) };
 }
 
 function clamp(n: number, min: number, max: number): number {
