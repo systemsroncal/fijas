@@ -3,6 +3,7 @@ import {
   IconStack2,
   IconPlus,
   IconBrain,
+  IconChartBar,
   IconKey,
   IconShield,
   IconUsers,
@@ -39,6 +40,12 @@ const Menuitems = [
     title: 'Análisis IA',
     icon: IconBrain,
     href: '/analyses',
+  },
+  {
+    id: 'analyses-performance',
+    title: 'Rendimiento / aciertos',
+    icon: IconChartBar,
+    href: '/analyses/performance',
   },
   {
     navlabel: true,

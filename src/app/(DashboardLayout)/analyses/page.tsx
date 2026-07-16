@@ -1,6 +1,7 @@
 'use client';
 
-import { apiUrl } from '@/lib/paths';
+import Link from 'next/link';
+import { apiUrl, getBasePath } from '@/lib/paths';
 
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -398,7 +399,9 @@ export default function AnalysesPage() {
       <Typography variant="body2" color="text.secondary" mb={2}>
         Scraping (tips/cuotas de +20 fuentes) + TheSportsDB (calendario/forma/H2H) + modelo. Si la IA
         elegida no responde, se prueba la siguiente key activa; si ninguna responde, análisis neuronal
-        (solo modelo).
+        (solo modelo). Consulta{' '}
+        <Link href={`${getBasePath()}/analyses/performance`}>Rendimiento / aciertos</Link> para el %
+        de acierto vs partidos finalizados.
       </Typography>
 
       <AnalysisProgressDialog

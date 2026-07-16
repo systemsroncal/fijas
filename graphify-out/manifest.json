@@ -205,8 +205,8 @@
     "semantic_hash": "51d7ff4f3eb8f95522746334aeaa2855"
   },
   "src/app/(DashboardLayout)/analyses/page.tsx": {
-    "mtime": 1784176670.882993,
-    "ast_hash": "df13e806055532aeef28d229c1688308",
+    "mtime": 1784178472.8864534,
+    "ast_hash": "80bbb7f05dae3b9a64c01191c7bca06e",
     "semantic_hash": ""
   },
   "src/app/(DashboardLayout)/components/container/PageContainer.tsx": {
@@ -520,13 +520,13 @@
     "semantic_hash": "bbd8021962ed0daa19a05c9ee12d76e8"
   },
   "src/lib/ai/providers.ts": {
-    "mtime": 1784071086.3582256,
-    "ast_hash": "a57966f0852dadc7c4a2748252c2d8f9",
-    "semantic_hash": "a57966f0852dadc7c4a2748252c2d8f9"
+    "mtime": 1784178487.7563736,
+    "ast_hash": "623911687f18cf06c4225b6f34a7e943",
+    "semantic_hash": ""
   },
   "src/lib/ai/structured-analysis.ts": {
-    "mtime": 1784176550.1183908,
-    "ast_hash": "c7a94a61480ed82d190224670de762e0",
+    "mtime": 1784178516.5643456,
+    "ast_hash": "5ad30716c37bd2f9e7bb6cd5b84a4e93",
     "semantic_hash": ""
   },
   "src/lib/api-guard.ts": {
@@ -805,8 +805,8 @@
     "semantic_hash": ""
   },
   "src/components/analysis/AnalysisProgressDialog.tsx": {
-    "mtime": 1784176620.101122,
-    "ast_hash": "825a3131fcde9aada7272f98e9ca9d66",
+    "mtime": 1784178451.6887872,
+    "ast_hash": "ec6142682aa618726eb76023458c096c",
     "semantic_hash": ""
   },
   "src/lib/ai/external-sources.ts": {

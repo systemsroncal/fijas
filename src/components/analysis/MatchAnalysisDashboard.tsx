@@ -142,7 +142,7 @@ export default function MatchAnalysisDashboard({
   const brief = valid ? payload.brief ?? withBrief(payload).brief : undefined;
   const homeLabel = `${m?.homeTeam ?? 'Local'} GANA`;
   const awayLabel = `${m?.awayTeam ?? 'Visitante'} GANA`;
-  const edgeMarkets = valid ? payload.markets.slice(0, 8) : [];
+  const edgeMarkets = valid ? payload.markets.slice(0, 16) : [];
 
   const donutOptions = useMemo(
     () => ({

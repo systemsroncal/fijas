@@ -30,6 +30,7 @@ import {
   marketFamily,
   marketPriority,
 } from '@/lib/match-display';
+import { scanSportSpecificEdges } from '@/lib/ai/sport-markets';
 
 export type {
   AnalysisMarket,
@@ -106,10 +107,11 @@ function buildSameMatchGapAccumulators(
       (e) =>
         e.verdict === 'value' ||
         e.verdict === 'safe' ||
-        (e.edge >= 0.02 && e.modelProb >= 0.42)
+        (e.edge >= 0.015 && e.modelProb >= 0.4) ||
+        (e.modelProb >= 0.55 && e.odds >= 1.25)
     )
-    .sort((a, b) => b.edge - a.edge)
-    .slice(0, 8);
+    .sort((a, b) => b.edge - a.edge || b.modelProb - a.modelProb)
+    .slice(0, 14);
 
   const out: ProposedAccumulator[] = [];
   const seen = new Set<string>();
@@ -136,9 +138,9 @@ function buildSameMatchGapAccumulators(
         totalOdds,
         legs,
       });
-      if (out.length >= 3) break;
+      if (out.length >= 8) break;
     }
-    if (out.length >= 3) break;
+    if (out.length >= 8) break;
   }
 
   // Triple hueco si hay 3 mercados mutuamente compatibles
@@ -152,6 +154,12 @@ function buildSameMatchGapAccumulators(
             areMarketsCompatible(trio[0].market, trio[2].market) &&
             areMarketsCompatible(trio[1].market, trio[2].market);
           if (!ok) continue;
+          const key = trio
+            .map((e) => e.market)
+            .sort()
+            .join('|');
+          if (seen.has(key)) continue;
+          seen.add(key);
           const legs = trio.map((e) => legFromEdge(e, ctx, label));
           out.push({
             title: `Hueco triple · ${label}`,
@@ -159,13 +167,13 @@ function buildSameMatchGapAccumulators(
             totalOdds: Math.round(legs.reduce((acc, l) => acc * l.odds, 1) * 1000) / 1000,
             legs,
           });
-          return out.slice(0, 4);
+          if (out.length >= 10) return out.slice(0, 10);
         }
       }
     }
   }
 
-  return out.slice(0, 4);
+  return out.slice(0, 10);
 }
 
 export function emptyForm(message?: string): TeamFormBlock {
@@ -197,10 +205,17 @@ export function buildModelPayload(
   extras?: { form?: TeamFormBlock; relatedMatches?: RelatedMatchRow[] }
 ): StructuredMatchPayload {
   const probs = predictMatch(ctx);
-  const edges = scanMatchEdges(ctx, probs);
+  const sport = detectSport(ctx.league);
+  const coreEdges = scanMatchEdges(ctx, probs);
+  const sportEdges = scanSportSpecificEdges(sport, ctx, probs);
+  // Evitar duplicar market names
+  const seenMarkets = new Set(coreEdges.map((e) => e.market.toLowerCase()));
+  const edges = [
+    ...coreEdges,
+    ...sportEdges.filter((e) => !seenMarkets.has(e.market.toLowerCase())),
+  ];
   const scores = topScorelines(probs.lambdaHome, probs.lambdaAway, 4);
   const expectedRaw = expectedCornersCards(probs);
-  const sport = detectSport(ctx.league);
   const form = extras?.form ?? emptyForm();
 
   const byQuality = (a: MarketEdge, b: MarketEdge) =>
@@ -255,6 +270,24 @@ export function buildModelPayload(
     const sig = gap.legs.map((l) => l.market).sort().join('|');
     if (proposed.some((p) => p.legs.map((l) => l.market).sort().join('|') === sig)) continue;
     proposed.push(gap);
+  }
+
+  // Combinada stats+resultado (si hay mercados de córners/remates compatibles)
+  const resultPick = safe ?? value;
+  const statEdge = edges.find(
+    (e) =>
+      /c[oó]rner|remate|tarjeta|btts|2\.5/i.test(e.market) &&
+      resultPick &&
+      areMarketsCompatible(resultPick.market, e.market) &&
+      e.modelProb >= 0.45
+  );
+  if (resultPick && statEdge) {
+    proposed.push({
+      title: `Resultado + stat · ${label}`,
+      riskTier: 'value',
+      totalOdds: Math.round(resultPick.odds * statEdge.odds * 1000) / 1000,
+      legs: [legFromEdge(resultPick, ctx, label), legFromEdge(statEdge, ctx, label)],
+    });
   }
 
   const bookCount = edges.filter((e) => e.source === 'book').length;
@@ -318,8 +351,8 @@ export function buildModelPayload(
       cardsHome: form.avgCards,
       cardsAway: null,
       note: form.available
-        ? 'xG del modelo Poisson; medias de goles/tarjetas solo con historial scrapeado.'
-        : 'xG del modelo Poisson. Sin córners/tarjetas inventados.',
+        ? 'xG Poisson + mercados stats por deporte (proxy modelo, no box-score Opta). Medias reales solo con historial scrapeado.'
+        : 'xG Poisson. Mercados de remates/córners/etc. son proxies del modelo (implied), no stats oficiales.',
     },
     form,
     relatedMatches: extras?.relatedMatches ?? [],
@@ -976,7 +1009,7 @@ export function buildAccumulatorStructuredPayload(
           market: `${m.homeTeam} vs ${m.awayTeam} · ${x.market}`,
         }))
     ),
-    proposedAccumulators: proposed.slice(0, 8),
+    proposedAccumulators: proposed.slice(0, 12),
     picks: {
       value: resolvedLegs[0]
         ? {

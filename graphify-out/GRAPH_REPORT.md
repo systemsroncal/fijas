@@ -1,16 +1,16 @@
-# Graph Report - fijas  (2026-07-15)
+# Graph Report - fijas  (2026-07-16)
 
 ## Corpus Check
-- 153 files · ~95,384 words
+- 153 files · ~95,825 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 886 nodes · 1646 edges · 93 communities (54 shown, 39 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 61 edges (avg confidence: 0.71)
+- 896 nodes · 1464 edges · 99 communities (63 shown, 36 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 20 edges (avg confidence: 0.65)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1eb422b1`
+- Built from commit: `7a7139d2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -101,59 +101,65 @@
 - amqplib
 - @emotion/react
 - framer-motion
+- nfl.py
+- media-proxy.ts
+- page.tsx
+- match-key.ts
+- apexcharts
+- page.tsx
 
 ## God Nodes (most connected - your core abstractions)
-1. `apiUrl()` - 28 edges
-2. `requireAuth()` - 26 edges
-3. `POST()` - 25 edges
-4. `GenericTipsScraper` - 23 edges
-5. `isJunkMatch()` - 23 edges
-6. `buildModelPayload()` - 21 edges
-7. `PageContainer()` - 19 edges
-8. `repairMisparsedMatch()` - 18 edges
-9. `localDateISO()` - 17 edges
-10. `fetchMatchStatus()` - 17 edges
+1. `apiUrl()` - 26 edges
+2. `requireAuth()` - 23 edges
+3. `PageContainer()` - 18 edges
+4. `compilerOptions` - 17 edges
+5. `POST()` - 16 edges
+6. `POST()` - 16 edges
+7. `GenericTipsScraper` - 15 edges
+8. `requireSuperAdmin()` - 15 edges
+9. `fetchMatchStatus()` - 15 edges
+10. `buildModelPayload()` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `main()` --calls--> `bootstrapDatabase()`  [EXTRACTED]
+  server.js → scripts/bootstrap-db.js
+- `seedIfNeeded()` --references--> `@prisma/client`  [EXTRACTED]
+  scripts/bootstrap-db.js → package.json
+- `SalesOverview()` --references--> `react`  [EXTRACTED]
+  src/app/(DashboardLayout)/components/dashboard/SalesOverview.tsx → package.json
 - `test_empty_result_shape()` --calls--> `empty_result()`  [INFERRED]
   scrapers/tests/test_base.py → scrapers/sites/base.py
-- `MeritPredictScraper` --uses--> `GenericTipsScraper`  [INFERRED]
-  scrapers/sites/meritpredict.py → scrapers/sites/generic.py
-- `SaferTipScraper` --uses--> `GenericTipsScraper`  [INFERRED]
-  scrapers/sites/safertip.py → scrapers/sites/generic.py
-- `Soccer24Scraper` --uses--> `GenericTipsScraper`  [INFERRED]
-  scrapers/sites/soccer24.py → scrapers/sites/generic.py
-- `StakeGainsScraper` --uses--> `GenericTipsScraper`  [INFERRED]
-  scrapers/sites/stakegains.py → scrapers/sites/generic.py
+- `ForebetScraper` --uses--> `GenericTipsScraper`  [INFERRED]
+  scrapers/sites/forebet.py → scrapers/sites/generic.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (93 total, 39 thin omitted)
+## Communities (99 total, 36 thin omitted)
 
 ### Community 0 - "client.ts"
-Cohesion: 0.07
-Nodes (61): isMatchStillOpen(), localDateISO(), parseKickoffHm(), apiKey(), cache, CacheEntry, eventsOnDay(), EventsResponse (+53 more)
+Cohesion: 0.08
+Nodes (46): apiKey(), cache, CacheEntry, EventsResponse, EventStatsResponse, lookupEvent(), lookupEventStats(), lookupEventTimeline() (+38 more)
 
 ### Community 1 - "match-display.ts"
-Cohesion: 0.24
-Nodes (18): AccumulatorBuilderPage(), MatchRow, SelectedMatch, DashboardPage(), MatchRow, LiveMatchesPoller(), formatMarketLabel(), formatReadablePick() (+10 more)
+Cohesion: 0.15
+Nodes (14): Chart, MatchAnalysisDashboard(), verdictColor, buildAnalysisBrief(), sanitizeNarrative(), withBrief(), AiAttemptLog, AnalysisBrief (+6 more)
 
 ### Community 2 - "requireAuth"
-Cohesion: 0.07
-Nodes (43): createSchema, GET(), POST(), GET(), GET(), GET(), PATCH(), patchSchema (+35 more)
+Cohesion: 0.06
+Nodes (44): createSchema, GET(), POST(), GET(), GET(), GET(), PATCH(), patchSchema (+36 more)
 
 ### Community 3 - "route.ts"
-Cohesion: 0.09
-Nodes (46): buildAnalysisBrief(), sanitizeNarrative(), withBrief(), AiAttemptLog, AnalysisBrief, AnalysisMarket, AnalysisPick, ProposedAccumulator (+38 more)
+Cohesion: 0.24
+Nodes (17): applyLlmJson(), buildDeepPrompt(), buildModelPayload(), buildRandomScannerPayload(), buildSameMatchGapAccumulators(), clamp(), edgeToMarket(), enrichPayloadWithLlm() (+9 more)
 
 ### Community 4 - "PageContainer.tsx"
-Cohesion: 0.10
-Nodes (10): Suggested, SuggestedAccumulatorsPage(), AdminLogsPage(), Log, PageContainer(), Props, Props, darkTheme (+2 more)
+Cohesion: 0.18
+Nodes (3): PageContainer(), Props, Logo()
 
 ### Community 5 - "generic.py"
-Cohesion: 0.14
-Nodes (13): ABC, BaseHtmlScraper, _guess_teams(), _is_meta_cell(), Scraper genérico basado en BeautifulSoup para sitios sin Cloudflare., Clase base para scrapers HTML., Construye URLs a scrapear (hoy/mañana cuando aplique)., True si la celda es hora/fecha/número, no un nombre de equipo. (+5 more)
+Cohesion: 0.19
+Nodes (11): ABC, BaseHtmlScraper, _guess_teams(), _is_meta_cell(), Scraper genérico basado en BeautifulSoup para sitios sin Cloudflare., Clase base para scrapers HTML., Construye URLs a scrapear (hoy/mañana cuando aplique)., True si la celda es hora/fecha/número, no un nombre de equipo. (+3 more)
 
 ### Community 6 - "base.py"
 Cohesion: 0.39
@@ -172,8 +178,8 @@ Cohesion: 0.13
 Nodes (17): @prisma/client, @prisma/client, bootstrapDatabase(), { execSync }, path, ROOT, run(), seedIfNeeded() (+9 more)
 
 ### Community 10 - "MatchAnalysisDashboard.tsx"
-Cohesion: 0.07
-Nodes (46): attachSources(), cornersFromDiagnostics(), GET(), LegJson, loadTeamForm(), POST(), requireLlmKey(), schema (+38 more)
+Cohesion: 0.16
+Nodes (19): CacheEntry, fdGet(), FdMatch, FdStandingRow, FdTeamMatches, fetchStandings(), fetchTeamMatches(), fetchTodaysMatches() (+11 more)
 
 ### Community 11 - "providers.ts"
 Cohesion: 0.16
@@ -184,8 +190,8 @@ Cohesion: 0.14
 Nodes (7): ItemType, MainWrapper, PageWrapper, Menuitems, ItemType, renderMenuItems(), SidebarItems()
 
 ### Community 13 - "MatchResultStatsPanel.tsx"
-Cohesion: 0.12
-Nodes (22): GET(), Chart, MatchAnalysisDashboard(), TeamBadge(), verdictColor, FOCUS_STATS, MatchResultStatsPanel(), parseStatNum() (+14 more)
+Cohesion: 0.15
+Nodes (15): FOCUS_STATS, MatchResultStatsPanel(), parseStatNum(), phaseColor, phaseLabel, pickFocusStats(), StatCompareRow(), MatchStatusPayload (+7 more)
 
 ### Community 14 - "assets.d.ts"
 Cohesion: 0.20
@@ -213,43 +219,43 @@ Nodes (3): buildCommand, framework, installCommand
 
 ### Community 24 - "apexcharts"
 Cohesion: 0.18
-Nodes (11): apexcharts, eslint-config-next, kafkajs, dependencies, apexcharts, eslint-config-next, kafkajs, react-apexcharts (+3 more)
+Nodes (11): eslint-config-next, framer-motion, kafkajs, dependencies, eslint-config-next, framer-motion, kafkajs, react-apexcharts (+3 more)
 
 ### Community 27 - "@emotion/react"
-Cohesion: 0.13
-Nodes (8): Scraper Flashscore.pe / Flashscore livescore., Registro de scrapers por slug., MeritPredictScraper, NflScraper, NFL.com — scores / schedule., Scraper Predictz (hoy/mañana + acumuladas ES)., Soccer24Scraper, Tips1960Scraper
+Cohesion: 0.10
+Nodes (14): Scraper Flashscore.pe / Flashscore livescore., GenericTipsScraper, Scraper genérico: intenta extraer filas de tablas con equipos., Registro de scrapers por slug., MeritPredictScraper, OddsPortalScraper, OddsPortal: varias disciplinas para ampliar cobertura de torneos., Scraper Predictz (hoy/mañana + acumuladas ES). (+6 more)
 
 ### Community 31 - "eslint-config-next"
-Cohesion: 0.24
-Nodes (21): GET(), phaseFromEvent(), POST(), GET(), formatFemeninoLabel(), repairMisparsedMatch(), splitVs(), SportsDbEvent (+13 more)
+Cohesion: 0.10
+Nodes (46): GET(), querySchema, phaseFromEvent(), POST(), GET(), AccumulatorBuilderPage(), MatchRow, SelectedMatch (+38 more)
 
 ### Community 39 - "react-apexcharts"
-Cohesion: 0.16
-Nodes (14): BeautifulSoup, empty_result(), fetch_html(), Any, random_delay(), Obtiene HTML con requests + UA rotativo.      Args:         url: URL a consul, Parsea BeautifulSoup desde una URL., Retraso aleatorio anti-bot. (+6 more)
+Cohesion: 0.22
+Nodes (10): BeautifulSoup, fetch_html(), random_delay(), random_ua(), Utilidades compartidas de scraping., Devuelve un User-Agent aleatorio., Obtiene HTML con requests + UA rotativo.      Args:         url: URL a consul, Parsea BeautifulSoup desde una URL. (+2 more)
 
 ### Community 45 - "@types/node"
-Cohesion: 0.17
-Nodes (14): bodySchema, POST(), predictionSchema, POST(), validateApiSecret(), buildMatchKey(), normalizeTeam(), driver() (+6 more)
-
-### Community 58 - "match-status.ts"
-Cohesion: 0.22
-Nodes (6): ForebetScraper, Forebet multi-deporte: fútbol, basket, tenis, hockey, handball, vóley., GenericTipsScraper, Scraper genérico: intenta extraer filas de tablas con equipos., StatAreaScraper, VictorsPredictScraper
+Cohesion: 0.26
+Nodes (10): bodySchema, POST(), predictionSchema, driver(), MqDriver, MqEvent, mqPublish(), mqStatus() (+2 more)
 
 ### Community 59 - "page.tsx"
-Cohesion: 0.14
-Nodes (5): loginType, registerType, CustomTextField, Logo(), RegisterPage()
+Cohesion: 0.19
+Nodes (4): loginType, registerType, CustomTextField, RegisterPage()
 
 ### Community 60 - "page.tsx"
-Cohesion: 0.17
-Nodes (13): Accumulator, AnalysesPage(), Analysis, historyModeFor(), isMatchDashboardPayload(), MatchOpt, Mode, SubTab (+5 more)
+Cohesion: 0.15
+Nodes (11): Accumulator, AnalysesPage(), Analysis, historyModeFor(), isMatchDashboardPayload(), MatchOpt, Mode, SubTab (+3 more)
 
 ### Community 61 - "paths.ts"
-Cohesion: 0.18
-Nodes (8): AdminScrapersPage(), Source, AdminSessionsPage(), Control, AdminUsersPage(), UserRow, AuthProvider(), getBasePath()
+Cohesion: 0.15
+Nodes (15): Suggested, SuggestedAccumulatorsPage(), AdminLogsPage(), Log, AdminScrapersPage(), Source, AdminSessionsPage(), Control (+7 more)
 
 ### Community 62 - "AccumulatorAnalysisCard.tsx"
 Cohesion: 0.18
 Nodes (10): Deploy en Netlify, Deploy en Vercel, Local, MySQL remoto (cPanel), Rutas, Scraping (GitHub Actions), Seguridad, Stack (+2 more)
+
+### Community 64 - "MonthlyEarnings.tsx"
+Cohesion: 0.14
+Nodes (4): Chart, products, Chart, Props
 
 ### Community 65 - "ProductPerformance.tsx"
 Cohesion: 0.22
@@ -260,8 +266,8 @@ Cohesion: 0.25
 Nodes (7): Disclaimer, Diseño: Análisis IA híbrido (partido / combinada / aleatorio), Fuera de alcance, Modos API `POST /api/analyses`, Objetivo, Persistencia, UI
 
 ### Community 68 - "BeautifulSoup"
-Cohesion: 0.36
-Nodes (4): FootballDataScraper, Any, Scraper / sync football-data.org API v4 (plan free)., Ingesta fixtures/resultados vía API (X-Auth-Token).
+Cohesion: 0.14
+Nodes (20): AccumulatorAnalysisCard(), AccumulatorResultView, LegLine, ParsedAi, parseLegs(), tryParseAiJson(), clamp(), computeEdge() (+12 more)
 
 ### Community 69 - "random_ua"
 Cohesion: 0.38
@@ -272,72 +278,108 @@ Cohesion: 0.31
 Nodes (5): Any, Scraper SofaScore (ES)., SofaScore — partidos del día (HTML + API pública si responde)., Intenta API pública scheduled-events (puede fallar por anti-bot)., SofascoreScraper
 
 ### Community 71 - "exponential_retry"
-Cohesion: 0.18
-Nodes (9): exponential_retry(), Utilidades compartidas de scraping., Reintentos con espera 5s, 10s, 30s.      Args:         fn: Callable sin argum, GoogleSportsSearchScraper, Búsquedas deportivas (DuckDuckGo HTML) — proxy de 'Google search' sin API key., Consultas de tipsters vía DuckDuckGo HTML (más estable que scrapear Google SERP), Tests unitarios de utilidades de scraping., test_empty_result_shape() (+1 more)
+Cohesion: 0.22
+Nodes (8): empty_result(), exponential_retry(), Any, Reintentos con espera 5s, 10s, 30s.      Args:         fn: Callable sin argum, Resultado vacío estándar., Tests unitarios de utilidades de scraping., test_empty_result_shape(), test_exponential_retry_success()
 
 ### Community 72 - "cuotasahora.py"
-Cohesion: 0.33
-Nodes (4): CuotasAhoraScraper, Any, Scraper CuotasAhora — comparación de cuotas., CuotasAhora.com — odds comparison.
+Cohesion: 0.29
+Nodes (5): CuotasAhoraScraper, Any, GenericTipsScraper, Scraper CuotasAhora — comparación de cuotas., CuotasAhora.com — odds comparison.
 
 ### Community 73 - "fbref.py"
-Cohesion: 0.33
-Nodes (4): FbrefScraper, Any, Scraper FBref — partidos y estadísticas., FBref.com — fixtures / matches del día.
+Cohesion: 0.29
+Nodes (5): FbrefScraper, Any, GenericTipsScraper, Scraper FBref — partidos y estadísticas., FBref.com — fixtures / matches del día.
 
 ### Community 74 - "FlashscoreScraper"
-Cohesion: 0.32
-Nodes (5): random_ua(), Devuelve un User-Agent aleatorio., FlashscoreScraper, Any, Flashscore — resultados y partidos (PE + EN).
+Cohesion: 0.38
+Nodes (4): FlashscoreScraper, Any, GenericTipsScraper, Flashscore — resultados y partidos (PE + EN).
 
 ### Community 75 - "PredictzScraper"
-Cohesion: 0.53
-Nodes (3): PredictzScraper, Any, Predictz predictions tipster + acumuladas en español.
+Cohesion: 0.43
+Nodes (4): BaseHtmlScraper, PredictzScraper, Any, Predictz predictions tipster + acumuladas en español.
 
 ### Community 76 - "Scores24Scraper"
 Cohesion: 0.32
 Nodes (4): Any, Scraper Scores24 con bypass Cloudflare (cloudscraper) — multi-deporte., Scores24.live — varias rutas de deporte., Scores24Scraper
 
 ### Community 77 - "scores365.py"
-Cohesion: 0.33
-Nodes (4): Any, Scraper 365Scores (ES)., 365Scores — marcadores y partidos del día., Scores365Scraper
+Cohesion: 0.29
+Nodes (5): Any, GenericTipsScraper, Scraper 365Scores (ES)., 365Scores — marcadores y partidos del día., Scores365Scraper
 
 ### Community 78 - "theanalyst.py"
-Cohesion: 0.33
-Nodes (4): Any, Scraper Opta Analyst / TheAnalyst., Opta Analyst — artículos y stats (contexto cualitativo)., TheAnalystScraper
+Cohesion: 0.29
+Nodes (5): Any, GenericTipsScraper, Scraper Opta Analyst / TheAnalyst., Opta Analyst — artículos y stats (contexto cualitativo)., TheAnalystScraper
 
 ### Community 79 - "windrawwin.py"
-Cohesion: 0.33
-Nodes (4): Any, Scraper WinDrawWin (hoy y mañana)., WinDrawWin football predictions., WinDrawWinScraper
+Cohesion: 0.29
+Nodes (5): Any, GenericTipsScraper, Scraper WinDrawWin (hoy y mañana)., WinDrawWin football predictions., WinDrawWinScraper
 
 ### Community 80 - "WPS Admin — Dashboard de Apuestas Deportivas"
 Cohesion: 0.40
 Nodes (4): Decisiones, Modelo de datos (resumen), MySQL localhost, WPS Admin — Dashboard de Apuestas Deportivas
 
 ### Community 81 - "forebet.py"
-Cohesion: 0.38
-Nodes (6): AccumulatorAnalysisCard(), AccumulatorResultView, LegLine, ParsedAi, parseLegs(), tryParseAiJson()
+Cohesion: 0.36
+Nodes (4): FootballDataScraper, Any, Scraper / sync football-data.org API v4 (plan free)., Ingesta fixtures/resultados vía API (X-Auth-Token).
 
 ### Community 85 - "espn_yahoo.py"
-Cohesion: 0.50
-Nodes (3): EspnYahooScraper, Scraper ESPN + Yahoo Sports (scoreboards multi-deporte)., ESPN scoreboard API + Yahoo Sports HTML.
+Cohesion: 0.33
+Nodes (4): EspnYahooScraper, Any, Scraper ESPN + Yahoo Sports (scoreboards multi-deporte)., ESPN scoreboard API + Yahoo Sports HTML.
+
+### Community 86 - "nba.py"
+Cohesion: 0.33
+Nodes (4): NbaScraper, Any, GenericTipsScraper, NBA.com — scoreboard / schedule.
+
+### Community 87 - "oddsportal.py"
+Cohesion: 0.21
+Nodes (14): attachSources(), cornersFromDiagnostics(), LegJson, loadTeamForm(), POST(), requireLlmKey(), schema, scoresFromPayload() (+6 more)
+
+### Community 88 - "ProductPerformance.tsx"
+Cohesion: 0.33
+Nodes (9): FormMatchRow, TeamFormBlock, applySportsDbToPayload(), enrichMatchFromSportsDb(), eventScore(), fallbackForm(), mapLastEvents(), mergeFormWithSportsDb() (+1 more)
+
+### Community 89 - "YearlyBreakup.tsx"
+Cohesion: 0.52
+Nodes (6): exportNodeToPng(), flattenComputedColors(), monogramDataUrl(), stripBrokenMedia(), wait(), teamMonogram()
+
+### Community 92 - "framer-motion"
+Cohesion: 0.33
+Nodes (4): GoogleSportsSearchScraper, Any, Búsquedas deportivas (DuckDuckGo HTML) — proxy de 'Google search' sin API key., Consultas de tipsters vía DuckDuckGo HTML (más estable que scrapear Google SERP)
+
+### Community 93 - "nfl.py"
+Cohesion: 0.33
+Nodes (4): NflScraper, Any, GenericTipsScraper, NFL.com — scores / schedule.
+
+### Community 94 - "media-proxy.ts"
+Cohesion: 0.60
+Nodes (4): GET(), ALLOWED_HOSTS, isAllowedMediaHost(), proxiedMediaUrl()
+
+### Community 95 - "page.tsx"
+Cohesion: 0.47
+Nodes (4): ApiKeysSettingsPage(), SavedKey, AI_HELP, AI_PROVIDERS
+
+### Community 98 - "page.tsx"
+Cohesion: 0.40
+Nodes (3): darkTheme, Item, lightTheme
 
 ## Knowledge Gaps
-- **230 isolated node(s):** `extends`, `next/core-web-vitals`, `nextConfig`, `name`, `version` (+225 more)
+- **239 isolated node(s):** `Accumulator`, `Suggested`, `MatchOpt`, `Analysis`, `Mode` (+234 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **39 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **36 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `dependencies` connect `apexcharts` to `scripts`, `server.js`, `dependencies`, `react`, `bcryptjs`, `@emotion/cache`, `@emotion/server`, `@emotion/styled`, `eslint`, `@mui/lab`, `@mui/material`, `@netlify/plugin-nextjs`, `next`, `next-auth`, `prisma`, `react-dom`, `react-mui-sidebar`, `react-syntax-highlighter`, `@tabler/icons-react`, `@types/lodash`, `typescript`, `zod`, `html-to-image`, `lodash`, `@mui/icons-material`, `amqplib`, `@emotion/react`, `framer-motion`?**
-  _High betweenness centrality (0.156) - this node is a cross-community bridge._
+- **Why does `dependencies` connect `apexcharts` to `scripts`, `server.js`, `dependencies`, `react`, `bcryptjs`, `@emotion/cache`, `@emotion/server`, `@emotion/styled`, `eslint`, `@mui/lab`, `@mui/material`, `@netlify/plugin-nextjs`, `next`, `next-auth`, `prisma`, `react-dom`, `react-mui-sidebar`, `react-syntax-highlighter`, `@tabler/icons-react`, `@types/lodash`, `typescript`, `zod`, `html-to-image`, `lodash`, `@mui/icons-material`, `amqplib`, `@emotion/react`, `apexcharts`?**
+  _High betweenness centrality (0.147) - this node is a cross-community bridge._
 - **Why does `react` connect `react` to `apexcharts`?**
-  _High betweenness centrality (0.142) - this node is a cross-community bridge._
-- **Are the 17 inferred relationships involving `GenericTipsScraper` (e.g. with `CuotasAhoraScraper` and `FbrefScraper`) actually correct?**
-  _`GenericTipsScraper` has 17 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `extends`, `next/core-web-vitals`, `nextConfig` to the rest of the system?**
-  _230 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.134) - this node is a cross-community bridge._
+- **What connects `Accumulator`, `Suggested`, `MatchOpt` to the rest of the system?**
+  _239 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `client.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.07055630936227951 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0792156862745098 - nodes in this community are weakly interconnected._
 - **Should `requireAuth` be split into smaller, more focused modules?**
-  _Cohesion score 0.06610259122157588 - nodes in this community are weakly interconnected._
-- **Should `route.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.0942684766214178 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06299603174603174 - nodes in this community are weakly interconnected._
+- **Should `scripts` be split into smaller, more focused modules?**
+  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
+- **Should `compilerOptions` be split into smaller, more focused modules?**
+  _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._

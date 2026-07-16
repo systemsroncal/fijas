@@ -155,8 +155,19 @@ export function marketFamily(market: string): string {
   const l = market.toLowerCase();
   if (/btts.*s[ií]|ambos\s*marcan:\s*s[ií]|btts\s*yes/i.test(l)) return 'btts_yes';
   if (/btts.*no|ambos\s*marcan:\s*no/i.test(l)) return 'btts_no';
-  if (/\+|over|m[aá]s\s*de/i.test(l) && /gol/i.test(l)) return 'over';
-  if (/-|under|menos\s*de/i.test(l) && /gol/i.test(l)) return 'under';
+  if (/\+|over|m[aá]s\s*de/i.test(l) && /gol/i.test(l)) return 'over_goals';
+  if (/-|under|menos\s*de/i.test(l) && /gol/i.test(l)) return 'under_goals';
+  if (/c[oó]rner/i.test(l) && /\+|over|m[aá]s|totales/i.test(l)) return 'over_corners';
+  if (/remate|tiro/i.test(l) && /puerta/i.test(l)) return 'shots_on';
+  if (/remate|tiro/i.test(l)) return 'shots_total';
+  if (/tarjeta/i.test(l)) return 'cards';
+  if (/falta/i.test(l)) return 'fouls';
+  if (/ace|ases/i.test(l)) return 'aces';
+  if (/break\s*point/i.test(l)) return 'breakpoints';
+  if (/puntos totales|total puntos|total games|total juegos/i.test(l)) return 'total_pts';
+  if (/rebote/i.test(l)) return 'rebounds';
+  if (/asistencia/i.test(l)) return 'assists';
+  if (/triple/i.test(l)) return 'threes';
   if (/empat|draw/i.test(l) && !/gana o empate|o empate/i.test(l)) return 'draw';
   if (/visit|away/i.test(l) && /gana/i.test(l)) return 'away';
   if (/local|home/i.test(l) && /gana/i.test(l)) return 'home';
@@ -180,7 +191,7 @@ export function areMarketsCompatible(a: string, b: string): boolean {
     'away|home',
     'draw|home',
     'away|draw',
-    'over|under',
+    'over_goals|under_goals',
     'btts_no|btts_yes',
   ]);
   return !exclusive.has(pair);
