@@ -26,7 +26,7 @@ import { AI_PROVIDERS } from '@/lib/ai/providers-client';
 import MatchAnalysisDashboard from '@/components/analysis/MatchAnalysisDashboard';
 import AnalysisProgressDialog from '@/components/analysis/AnalysisProgressDialog';
 import type { AnalysisProgressEvent, StructuredMatchPayload } from '@/lib/ai/analysis-types';
-import { isJunkMatch } from '@/lib/match-display';
+import { detectSport, isJunkMatch, type SportKind } from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
 
 type Accumulator = {
@@ -134,6 +134,17 @@ export default function AnalysesPage() {
     const allowed = new Set(historyModeFor(mode));
     return analyses.filter((a) => allowed.has(a.mode ?? ''));
   }, [analyses, mode]);
+
+  const progressSport = useMemo((): SportKind => {
+    if (mode === 'MATCH' && matchId) {
+      const m = matches.find((x) => x.id === matchId);
+      if (m?.league) return detectSport(m.league);
+    }
+    if (activeAnalysis?.match?.league) return detectSport(activeAnalysis.match.league);
+    if (payload?.match?.sport) return payload.match.sport as SportKind;
+    if (payload?.match?.league) return detectSport(payload.match.league);
+    return 'football';
+  }, [mode, matchId, matches, activeAnalysis?.match?.league, payload?.match?.sport, payload?.match?.league]);
 
   const refresh = async () => {
     setLoading(true);
@@ -283,7 +294,7 @@ export default function AnalysesPage() {
         cascadeEvents.push({
           type: 'progress',
           step: 'ai',
-          message: 'Fallback → análisis neuronal (solo modelo)',
+          message: 'Fallback → Red Neuronal',
           pct: 95,
         });
       }
@@ -308,7 +319,7 @@ export default function AnalysesPage() {
       if (a) setActiveAnalysis(a);
       const engine =
         cascade?.neuralOnly
-          ? 'Neuronal (sin IA)'
+          ? 'Red Neuronal'
           : cascade?.used || a?.iaProvider || provider;
       setResultMsg(
         `${force || override?.matchId ? 'Reanálisis' : 'Análisis'}: Riesgo ${a?.riskScore} · EV ${a?.evScore} · Stake ${a?.recommendedStake} · ${engine}`
@@ -407,6 +418,7 @@ export default function AnalysesPage() {
       <AnalysisProgressDialog
         open={progressOpen}
         provider={provider}
+        sportKind={progressSport}
         events={progressEvents}
         running={running}
         failed={progressFailed}

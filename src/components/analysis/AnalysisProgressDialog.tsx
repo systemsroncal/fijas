@@ -11,8 +11,9 @@ import {
   Typography,
 } from '@mui/material';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
-import { ANALYSIS_EXTERNAL_SOURCES } from '@/lib/ai/external-sources';
+import { sourcesForSport } from '@/lib/ai/external-sources';
 import type { AnalysisProgressEvent } from '@/lib/ai/analysis-types';
+import type { SportKind } from '@/lib/match-display';
 
 type Line = {
   id: string;
@@ -24,6 +25,8 @@ type Props = {
   open: boolean;
   provider: string;
   events: AnalysisProgressEvent[];
+  /** Deporte del partido analizado (filtra fuentes del popup) */
+  sportKind?: SportKind;
   /** true mientras el fetch sigue en curso */
   running: boolean;
   /** true si el análisis falló (mantiene el popup abierto) */
@@ -99,6 +102,7 @@ export default function AnalysisProgressDialog({
   open,
   provider,
   events,
+  sportKind = 'football',
   running,
   failed,
   onClose,
@@ -109,6 +113,7 @@ export default function AnalysisProgressDialog({
   const bottomRef = useRef<HTMLDivElement>(null);
   const bootRef = useRef(false);
   const seenEvt = useRef(0);
+  const externalSources = useMemo(() => sourcesForSport(sportKind), [sportKind]);
 
   const pct = useMemo(() => {
     const last = [...events].reverse().find((e) => typeof e.pct === 'number');
@@ -142,7 +147,7 @@ export default function AnalysisProgressDialog({
       },
       {
         id: 'boot3',
-        text: `› IA preferida: ${provider} (failover → otras keys → neuronal)`,
+        text: `› IA preferida: ${provider} (failover → otras keys → Red Neuronal)`,
         tone: 'ai',
       },
     ]);
@@ -151,8 +156,8 @@ export default function AnalysisProgressDialog({
   // Simula tipeo de fuentes mientras corre
   useEffect(() => {
     if (!open || !running) return;
-    if (sourceIdx >= ANALYSIS_EXTERNAL_SOURCES.length) return;
-    const src = ANALYSIS_EXTERNAL_SOURCES[sourceIdx];
+    if (sourceIdx >= externalSources.length) return;
+    const src = externalSources[sourceIdx];
     const t = window.setTimeout(() => {
       setLines((prev) => [
         ...prev,
@@ -170,7 +175,7 @@ export default function AnalysisProgressDialog({
       setSourceIdx((i) => i + 1);
     }, reduce ? 40 : 220 + Math.random() * 180);
     return () => window.clearTimeout(t);
-  }, [open, running, sourceIdx, reduce]);
+  }, [open, running, sourceIdx, reduce, externalSources]);
 
   // Heartbeat mientras espera IA (evita sensación de “congelado”)
   useEffect(() => {
@@ -341,7 +346,7 @@ export default function AnalysisProgressDialog({
                 variant="caption"
                 sx={{ color: '#94A3B8', display: 'block', mb: 1.5 }}
               >
-                Preferida: {provider} → si no responde, siguiente IA → neuronal (solo modelo)
+                Preferida: {provider} → si no responde, siguiente IA → Red Neuronal
               </Typography>
               <LinearProgress
                 variant={running && pct < 8 ? 'indeterminate' : 'determinate'}

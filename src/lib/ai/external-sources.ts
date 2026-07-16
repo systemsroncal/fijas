@@ -1,5 +1,7 @@
 /** Fuentes externas mostradas en el popup de análisis (scrapers + APIs). */
 
+import type { SportKind } from '@/lib/match-display';
+
 export const ANALYSIS_EXTERNAL_SOURCES = [
   { id: 'scrapers', name: 'Tips/cuotas scrapeados (BD)', cmd: 'load --from scrapers.db' },
   { id: 'predictz', name: 'Predictz / acumuladas', cmd: 'curl predictz.com/es/pronosticos…' },
@@ -18,5 +20,25 @@ export const ANALYSIS_EXTERNAL_SOURCES = [
   { id: 'h2h', name: 'H2H + forma temporada (BD)', cmd: 'query --h2h --season-form' },
   { id: 'football_data', name: 'football-data.org API', cmd: 'curl api.football-data.org/v4/matches -H X-Auth-Token' },
   { id: 'sportsdb', name: 'TheSportsDB (live/forma)', cmd: 'api thesportsdb.com' },
-  { id: 'poisson', name: 'Modelo neuronal Poisson', cmd: './model --poisson --deep' },
+  { id: 'poisson', name: 'Red Neuronal (Poisson)', cmd: './model --poisson --deep' },
 ] as const;
+
+/** Fuentes solo válidas para ciertos deportes (omitir = todas). */
+const SOURCE_SPORTS: Partial<Record<(typeof ANALYSIS_EXTERNAL_SOURCES)[number]['id'], SportKind[]>> = {
+  fbref: ['football', 'other'],
+  football_data: ['football', 'other'],
+  predictz: ['football', 'other'],
+  windrawwin: ['football', 'other'],
+  theanalyst: ['football', 'other'],
+  nba: ['basketball'],
+  nfl: ['american_football'],
+};
+
+/** Fuentes del popup filtradas por deporte del partido analizado. */
+export function sourcesForSport(sport: SportKind) {
+  return ANALYSIS_EXTERNAL_SOURCES.filter((src) => {
+    const allowed = SOURCE_SPORTS[src.id];
+    if (!allowed) return true;
+    return allowed.includes(sport);
+  });
+}

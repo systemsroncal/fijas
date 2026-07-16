@@ -113,7 +113,7 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
 
   if (payload.aiCascade?.neuralOnly) {
     bullets.push(
-      'Motor: análisis neuronal (solo modelo) — ninguna IA externa respondió o no hay keys.'
+      'Motor: Red Neuronal — ninguna IA externa respondió o no hay keys.'
     );
   } else if (payload.llmUsed && payload.llmProvider) {
     bullets.push(`Motor: IA ${payload.llmProvider} (enriquecimiento narrativo).`);
@@ -174,7 +174,7 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
       tipLabel && tipLabel !== '—' ? 'Tip de fuente de scraping' : 'Sin tip de scraping',
       payload.llmUsed
         ? `IA ${payload.llmProvider}`
-        : 'Análisis neuronal sin IA (solo modelo)',
+        : 'Red Neuronal',
     ],
     limitations: [
       'No se inventan tiros a puerta, goleadores ni props de jugador.',

@@ -4,6 +4,8 @@
  * Auth: header X-Auth-Token (FOOTBALL_DATA_API_TOKEN).
  */
 
+import { sameTeamIdentity } from '@/lib/team-identity';
+
 const BASE = 'https://api.football-data.org/v4';
 
 /** Competiciones típicas del plan free (codes). */
@@ -35,7 +37,17 @@ export type FdMatch = {
     halfTime?: { home?: number | null; away?: number | null };
   };
   competition?: { name?: string; code?: string };
+  /** Presente en varios endpoints v4 cuando hay asignación */
+  referees?: Array<{ id?: number; name?: string; type?: string; nationality?: string | null }>;
 };
+
+export function primaryRefereeName(m: FdMatch | null | undefined): string | null {
+  const list = m?.referees ?? [];
+  const main =
+    list.find((r) => /referee|main|principal/i.test(r.type ?? '')) ?? list[0];
+  const name = main?.name?.trim();
+  return name && name.length > 1 ? name : null;
+}
 
 export type FdStandingRow = {
   position: number;
@@ -147,21 +159,8 @@ export async function fetchTeamMatches(
   return data.matches ?? [];
 }
 
-function norm(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function teamMatch(a: string, b: string): boolean {
-  const x = norm(a);
-  const y = norm(b);
-  if (!x || !y) return false;
-  return x === y || x.includes(y) || y.includes(x);
+  return sameTeamIdentity(a, b);
 }
 
 /**

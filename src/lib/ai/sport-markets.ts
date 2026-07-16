@@ -56,11 +56,19 @@ export function scanSportSpecificEdges(
 
   if (sport === 'football' || sport === 'other') {
     // Proxies: más goles esperados → más remates/córners/faltas
-    const shotsTotalMean = 22 + intensity * 6;
-    const shotsOnMean = 8 + intensity * 3;
-    const cornersMean = 9 + intensity * 2.5;
-    const cardsMean = 3.8 + (1 - Math.abs(probs.home - probs.away)) * 1.2;
-    const foulsMean = 22 + intensity * 2;
+    // ctx.refereeStyle / absenceGoalMult (opcionales) ajustan disciplina y totales
+    const cardMult =
+      ctx.refereeStyle === 'strict' ? 1.28 : ctx.refereeStyle === 'lenient' ? 0.78 : 1;
+    const foulMult =
+      ctx.refereeStyle === 'strict' ? 1.18 : ctx.refereeStyle === 'lenient' ? 0.88 : 1;
+    const goalMult = ctx.absenceGoalMult ?? 1;
+
+    const shotsTotalMean = (22 + intensity * 6) * goalMult;
+    const shotsOnMean = (8 + intensity * 3) * goalMult;
+    const cornersMean = (9 + intensity * 2.5) * goalMult;
+    const cardsMean =
+      (3.8 + (1 - Math.abs(probs.home - probs.away)) * 1.2) * cardMult;
+    const foulsMean = (22 + intensity * 2) * foulMult;
     const offsidesMean = 3.2 + intensity * 0.8;
     const tacklesMean = 28 + intensity * 3;
     const savesMean = 5.5 + intensity * 1.5;
@@ -84,12 +92,14 @@ export function scanSportSpecificEdges(
       row('Atajadas porteros +5.5', '5.5', pOver(savesMean, 5.5)),
       row('Tackles +27.5', '27.5', pOver(tacklesMean, 27.5)),
       row('Faltas totales +21.5', '21.5', pOver(foulsMean, 21.5)),
+      row('Faltas totales +24.5', '24.5', pOver(foulsMean, 24.5)),
       row('Tarjetas totales +3.5', '3.5', pOver(cardsMean, 3.5)),
       row('Tarjetas totales +4.5', '4.5', pOver(cardsMean, 4.5)),
+      row('Tarjetas totales +5.5', '5.5', pOver(cardsMean, 5.5)),
       row('Fueras de juego +2.5', '2.5', pOver(offsidesMean, 2.5)),
       row('+0.5 goles', '0.5', clamp01(probs.over15 + 0.12)),
-      row('+3.5 goles', '3.5', clamp01(probs.over25 * 0.55)),
-      row('-1.5 goles', '1.5', clamp01(1 - probs.over15)),
+      row('+3.5 goles', '3.5', clamp01(probs.over25 * 0.55 * goalMult)),
+      row('-1.5 goles', '1.5', clamp01(1 - probs.over15 * goalMult)),
     ]);
   }
 

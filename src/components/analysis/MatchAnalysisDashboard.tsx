@@ -142,7 +142,29 @@ export default function MatchAnalysisDashboard({
   const brief = valid ? payload.brief ?? withBrief(payload).brief : undefined;
   const homeLabel = `${m?.homeTeam ?? 'Local'} GANA`;
   const awayLabel = `${m?.awayTeam ?? 'Visitante'} GANA`;
-  const edgeMarkets = valid ? payload.markets.slice(0, 16) : [];
+  const edgeMarkets = useMemo(() => {
+    if (!valid) return [];
+    // Prioriza 1X2, goles, BTTS, tarjetas, faltas, córners/remates
+    const rank = (m: string) => {
+      const l = m.toLowerCase();
+      if (/gana|empate|1x2|local|visitante/.test(l) && !/hándic|handicap|ah /.test(l)) return 0;
+      if (/goles|btts|ambos/.test(l)) return 1;
+      if (/tarjeta|card/.test(l)) return 2;
+      if (/falta|foul/.test(l)) return 3;
+      if (/c[oó]rner|remate/.test(l)) return 4;
+      return 5;
+    };
+    return [...payload.markets]
+      .sort((a, b) => rank(a.market) - rank(b.market) || b.aiProb - a.aiProb)
+      .slice(0, 14);
+  }, [valid, payload.markets]);
+
+  const tableMarkets = useMemo(() => {
+    if (!valid) return [];
+    return [...payload.markets]
+      .sort((a, b) => b.aiProb - a.aiProb || b.edge - a.edge)
+      .slice(0, 20);
+  }, [valid, payload.markets]);
 
   const donutOptions = useMemo(
     () => ({
@@ -160,24 +182,56 @@ export default function MatchAnalysisDashboard({
     ? [payload.probs.home, payload.probs.draw, payload.probs.away]
     : [0, 0, 0];
 
-  const barOptions = useMemo(
-    () => ({
+  const barOptions = useMemo(() => {
+    const colors = edgeMarkets.map((r) => {
+      if (r.verdict === 'value') return theme.palette.success.main;
+      if (r.verdict === 'safe') return theme.palette.info.main;
+      if (r.verdict === 'risky') return theme.palette.warning.main;
+      if (r.verdict === 'avoid') return theme.palette.error.main;
+      return theme.palette.grey[500];
+    });
+    return {
       chart: { type: 'bar' as const, fontFamily: 'inherit', toolbar: { show: false } },
-      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '70%' } },
+      plotOptions: {
+        bar: { horizontal: true, borderRadius: 4, barHeight: '68%', distributed: true },
+      },
       xaxis: {
         categories: edgeMarkets.map((r) =>
-          r.market.length > 42 ? `${r.market.slice(0, 40)}…` : r.market
+          r.market.length > 36 ? `${r.market.slice(0, 34)}…` : r.market
         ),
+        max: 100,
+        labels: { formatter: (v: string) => `${v}%` },
       },
-      colors: [theme.palette.info.main],
-      dataLabels: { enabled: true, formatter: (v: number) => `${Number(v).toFixed(0)}%` },
-      tooltip: { y: { formatter: (v: number) => `Prob ${Number(v).toFixed(1)}%` } },
-    }),
-    [edgeMarkets, theme]
-  );
+      colors,
+      legend: { show: false },
+      dataLabels: {
+        enabled: true,
+        formatter: (v: number) => `${Number(v).toFixed(0)}%`,
+        style: { fontSize: '11px', fontWeight: 700 },
+      },
+      tooltip: {
+        y: {
+          formatter: (v: number, opts: { dataPointIndex: number }) => {
+            const row = edgeMarkets[opts.dataPointIndex];
+            if (!row) return `${Number(v).toFixed(1)}%`;
+            return `Prob ${row.aiProb.toFixed(1)}% · cuota ${row.odds.toFixed(2)} · edge ${
+              row.edge >= 0 ? '+' : ''
+            }${row.edge.toFixed(1)} · ${row.verdict}`;
+          },
+        },
+      },
+    };
+  }, [edgeMarkets, theme]);
   const barSeries = [
     { name: 'Prob. modelo', data: edgeMarkets.map((r) => Math.round(r.aiProb * 10) / 10) },
   ];
+
+  const styleLabel = (s?: string) => {
+    if (s === 'strict') return 'Estricto (cobra mucho)';
+    if (s === 'lenient') return 'Permisivo (deja jugar)';
+    if (s === 'balanced') return 'Equilibrado';
+    return 'Desconocido';
+  };
 
   const exportPng = async () => {
     if (!ref.current) return;
@@ -274,7 +328,7 @@ export default function MatchAnalysisDashboard({
                     size="small"
                     color="warning"
                     variant="outlined"
-                    label="Neuronal (sin IA)"
+                    label="Red Neuronal"
                   />
                 ) : payload.llmUsed ? (
                   <Chip
@@ -404,11 +458,86 @@ export default function MatchAnalysisDashboard({
           </Box>
 
           {edgeMarkets.length > 0 && (
-            <Box data-export-ignore="1">
-              <Typography fontWeight={700} gutterBottom>
-                Gráfica de mercados (probabilidad modelo)
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" mb={0.5} flexWrap="wrap">
+                <Typography fontWeight={700}>Gráfica de mercados (probabilidad modelo)</Typography>
+                <Chip size="small" label="color = veredicto" variant="outlined" />
+                {payload.contextMultipliers &&
+                  payload.contextMultipliers.note !== 'sin ajuste contextual' && (
+                    <Chip
+                      size="small"
+                      color="warning"
+                      label={`Ajuste: ${payload.contextMultipliers.note}`}
+                    />
+                  )}
+              </Stack>
+              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                Verde value · azul seguro · ámbar arriesgado · rojo evitar. Tooltip: cuota + edge.
               </Typography>
-              <Chart options={barOptions} series={barSeries} type="bar" height={280} width="100%" />
+              <Box data-export-ignore="1">
+                <Chart
+                  options={barOptions}
+                  series={barSeries}
+                  type="bar"
+                  height={Math.max(280, edgeMarkets.length * 28)}
+                  width="100%"
+                />
+              </Box>
+
+              <Typography fontWeight={700} mt={2} mb={1}>
+                Mercados principales
+              </Typography>
+              <Table size="small" sx={{ mb: 1 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Mercado</TableCell>
+                    <TableCell align="right">Cuota</TableCell>
+                    <TableCell align="right">Prob. IA</TableCell>
+                    <TableCell align="right">Edge</TableCell>
+                    <TableCell align="center">Rec.</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {tableMarkets.map((row) => (
+                    <TableRow key={`${row.market}-${row.line ?? ''}-${row.odds}`} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={600}>
+                          {row.market}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {row.source === 'book'
+                            ? 'cuota casa'
+                            : row.source === 'model'
+                              ? 'modelo'
+                              : 'implícita modelo'}
+                          {row.line ? ` · línea ${row.line}` : ''}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Chip size="small" label={row.odds.toFixed(2)} color="primary" variant="outlined" />
+                      </TableCell>
+                      <TableCell align="right">{row.aiProb.toFixed(1)}%</TableCell>
+                      <TableCell align="right">
+                        <Typography
+                          variant="body2"
+                          color={row.edge >= 2 ? 'success.main' : row.edge <= -4 ? 'error.main' : 'text.primary'}
+                          fontWeight={600}
+                        >
+                          {row.edge >= 0 ? '+' : ''}
+                          {row.edge.toFixed(1)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          size="small"
+                          label={row.verdict}
+                          color={verdictColor[row.verdict] ?? 'default'}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </Box>
           )}
 
@@ -416,12 +545,22 @@ export default function MatchAnalysisDashboard({
             {[
               ['xG modelo', `${payload.expected.xgHome ?? '—'} | ${payload.expected.xgAway ?? '—'}`],
               [
-                'Goles medios (hist.)',
-                payload.form?.avgGoalsTotal != null ? String(payload.form.avgGoalsTotal) : '—',
+                'Córners esp.',
+                payload.expected.cornersHome != null
+                  ? `${payload.expected.cornersHome} | ${payload.expected.cornersAway ?? '—'}`
+                  : '—',
               ],
               [
-                'Tarjetas medias',
-                payload.form?.avgCards != null ? String(payload.form.avgCards) : '—',
+                'Tarjetas esp.',
+                payload.expected.cardsHome != null
+                  ? `${payload.expected.cardsHome} | ${payload.expected.cardsAway ?? '—'}`
+                  : payload.form?.avgCards != null
+                    ? `hist. ${payload.form.avgCards}`
+                    : '—',
+              ],
+              [
+                'Goles medios (hist.)',
+                payload.form?.avgGoalsTotal != null ? String(payload.form.avgGoalsTotal) : '—',
               ],
             ].map(([k, v]) => (
               <Box
@@ -445,6 +584,154 @@ export default function MatchAnalysisDashboard({
           <Typography variant="caption" color="text.secondary">
             {payload.expected.note}
           </Typography>
+
+          {(payload.referee || payload.absences) && (
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+              {payload.referee && (
+                <Box
+                  sx={{
+                    flex: 1,
+                    p: 1.5,
+                    borderRadius: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor:
+                      payload.referee.style === 'strict'
+                        ? 'warning.50'
+                        : payload.referee.style === 'lenient'
+                          ? 'success.50'
+                          : 'grey.50',
+                  }}
+                >
+                  <Typography fontWeight={700} gutterBottom>
+                    Árbitro / disciplina
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>{payload.referee.name ?? 'Sin nombre confirmado'}</strong>
+                    {' · '}
+                    {styleLabel(payload.referee.style)}
+                  </Typography>
+                  <Stack direction="row" spacing={0.75} mt={0.75} flexWrap="wrap" useFlexGap>
+                    <Chip size="small" label={`Fuente: ${payload.referee.source}`} />
+                    <Chip
+                      size="small"
+                      color={
+                        payload.referee.cardsTendency === 'high'
+                          ? 'warning'
+                          : payload.referee.cardsTendency === 'low'
+                            ? 'success'
+                            : 'default'
+                      }
+                      label={`Tarjetas: ${payload.referee.cardsTendency}`}
+                    />
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" mt={0.75}>
+                    {payload.referee.notes}
+                  </Typography>
+                </Box>
+              )}
+              {payload.absences && (
+                <Box
+                  sx={{
+                    flex: 1,
+                    p: 1.5,
+                    borderRadius: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: 'grey.50',
+                  }}
+                >
+                  <Typography fontWeight={700} gutterBottom>
+                    Bajas / dudas
+                  </Typography>
+                  {[
+                    ['Local', payload.absences.home, m?.homeTeam],
+                    ['Visitante', payload.absences.away, m?.awayTeam],
+                  ].map(([side, list, team]) => {
+                    const rows = list as NonNullable<typeof payload.absences>['home'];
+                    return (
+                      <Box key={String(side)} mb={0.75}>
+                        <Typography variant="caption" color="text.secondary">
+                          {String(team ?? side)}
+                        </Typography>
+                        {rows.length === 0 ? (
+                          <Typography variant="body2">Sin bajas listadas</Typography>
+                        ) : (
+                          <Stack direction="row" flexWrap="wrap" gap={0.5} mt={0.25}>
+                            {rows.map((a) => (
+                              <Chip
+                                key={`${a.player}-${a.reason}`}
+                                size="small"
+                                color={
+                                  a.impact === 'high'
+                                    ? 'error'
+                                    : a.impact === 'medium'
+                                      ? 'warning'
+                                      : 'default'
+                                }
+                                label={`${a.player}${a.reason ? ` (${a.reason})` : ''}`}
+                              />
+                            ))}
+                          </Stack>
+                        )}
+                      </Box>
+                    );
+                  })}
+                  <Typography variant="caption" color="text.secondary">
+                    {payload.absences.notes}
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          )}
+
+          {payload.scenarios && payload.scenarios.length > 0 && (
+            <Box>
+              <Typography fontWeight={700} gutterBottom>
+                Escenarios (what-if)
+              </Typography>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
+                {payload.scenarios.map((sc) => {
+                  const h = Math.round(payload.probs.home + sc.probShifts.home);
+                  const d = Math.round(payload.probs.draw + sc.probShifts.draw);
+                  const a = Math.round(payload.probs.away + sc.probShifts.away);
+                  return (
+                    <Box
+                      key={sc.id}
+                      sx={{
+                        flex: '1 1 220px',
+                        p: 1.5,
+                        borderRadius: 1.5,
+                        border: '1px solid',
+                        borderColor: sc.id === 'base' ? 'primary.main' : 'divider',
+                        bgcolor: 'background.paper',
+                      }}
+                    >
+                      <Typography fontWeight={700} variant="body2">
+                        {sc.label}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                        {sc.assumptions}
+                      </Typography>
+                      <Typography variant="body2" mt={0.75}>
+                        1X2 esc.: <strong>{h}%</strong> / <strong>{d}%</strong> / <strong>{a}%</strong>
+                      </Typography>
+                      <Typography variant="caption" display="block" mt={0.5}>
+                        {sc.impactSummary}
+                      </Typography>
+                      {sc.focusMarkets.length > 0 && (
+                        <Stack direction="row" flexWrap="wrap" gap={0.5} mt={0.75}>
+                          {sc.focusMarkets.slice(0, 4).map((fm) => (
+                            <Chip key={fm} size="small" variant="outlined" label={fm} />
+                          ))}
+                        </Stack>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Box>
+          )}
 
           {payload.sportsDb && (
             <Box>
@@ -537,6 +824,10 @@ export default function MatchAnalysisDashboard({
           <Box>
             <Typography fontWeight={700} gutterBottom>
               Últimos partidos (scrape + TheSportsDB)
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              Misma categoría del partido analizado (sin mezclar femenino/juvenil). Alias de club
+              deduplicados (p. ej. Astana ≈ FC Astana).
             </Typography>
             {payload.form?.available && payload.form.recentScores.length > 0 ? (
               <Stack spacing={1}>

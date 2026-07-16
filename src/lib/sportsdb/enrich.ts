@@ -21,6 +21,11 @@ import {
   type SportsDbTeam,
 } from '@/lib/sportsdb/client';
 import { localDateISO } from '@/lib/local-date';
+import {
+  detectTeamCategory,
+  isOutlierFootballScore,
+  sanitizeFormRows,
+} from '@/lib/team-identity';
 
 export type SportsDbDeepContext = {
   source: 'thesportsdb';
@@ -53,12 +58,31 @@ function eventScore(ev: SportsDbEvent): string | null {
   return `${ev.intHomeScore}-${ev.intAwayScore}`;
 }
 
-function mapLastEvents(events: SportsDbEvent[]) {
-  return events.slice(0, 5).map((ev) => ({
-    label: ev.strEvent ?? `${ev.strHomeTeam ?? '?'} vs ${ev.strAwayTeam ?? '?'}`,
-    score: eventScore(ev),
-    date: ev.dateEvent,
-  }));
+function mapLastEvents(
+  events: SportsDbEvent[],
+  opts?: { league?: string | null; targetCategory?: ReturnType<typeof detectTeamCategory> }
+) {
+  const target = opts?.targetCategory ?? 'senior_men';
+  return events
+    .filter((ev) => {
+      const league = ev.strLeague ?? opts?.league ?? '';
+      const home = ev.strHomeTeam ?? '';
+      const away = ev.strAwayTeam ?? '';
+      const cat = detectTeamCategory(`${home} ${away}`, league);
+      if (target === 'senior_men' && (cat === 'senior_women' || cat === 'youth' || cat === 'reserve')) {
+        return false;
+      }
+      if (target !== 'senior_men' && cat !== target && cat !== 'unknown') return false;
+      const score = eventScore(ev);
+      if (isOutlierFootballScore(score)) return false;
+      return true;
+    })
+    .slice(0, 5)
+    .map((ev) => ({
+      label: ev.strEvent ?? `${ev.strHomeTeam ?? '?'} vs ${ev.strAwayTeam ?? '?'}`,
+      score: eventScore(ev),
+      date: ev.dateEvent,
+    }));
 }
 
 function fallbackForm(): TeamFormBlock {
@@ -106,6 +130,11 @@ export async function enrichMatchFromSportsDb(input: {
   const date = input.matchDateYmd ?? localDateISO();
   const sport = sportApiLabel(input.sportKind);
   const fetchBadges = input.fetchBadges !== false;
+  const targetCategory = detectTeamCategory(
+    `${input.homeTeam} ${input.awayTeam}`,
+    input.league
+  );
+  const mapOpts = { league: input.league, targetCategory };
 
   // 1) Eventos del día (cacheados → casi gratis en análisis sucesivos)
   used += 1;
@@ -136,7 +165,7 @@ export async function enrichMatchFromSportsDb(input: {
   // Free V1: searchteams.php?t=Name funciona con key 123 (ej. Arsenal)
   if (homeId) {
     used += 1;
-    homeRecent = mapLastEvents(await lastEventsForTeam(homeId));
+    homeRecent = mapLastEvents(await lastEventsForTeam(homeId), mapOpts);
     if (fetchBadges) {
       used += 1;
       homeTeam = await lookupTeam(homeId);
@@ -146,7 +175,7 @@ export async function enrichMatchFromSportsDb(input: {
     homeTeam = await searchTeam(input.homeTeam);
     if (homeTeam?.idTeam) {
       used += 1;
-      homeRecent = mapLastEvents(await lastEventsForTeam(homeTeam.idTeam));
+      homeRecent = mapLastEvents(await lastEventsForTeam(homeTeam.idTeam), mapOpts);
       notes.push(`Local resuelto vía searchteams free («${homeTeam.strTeam}»).`);
     } else {
       notes.push(`Sin equipo TheSportsDB free para local «${input.homeTeam}».`);
@@ -155,7 +184,7 @@ export async function enrichMatchFromSportsDb(input: {
 
   if (awayId) {
     used += 1;
-    awayRecent = mapLastEvents(await lastEventsForTeam(awayId));
+    awayRecent = mapLastEvents(await lastEventsForTeam(awayId), mapOpts);
     if (fetchBadges) {
       used += 1;
       awayTeam = await lookupTeam(awayId);
@@ -165,7 +194,7 @@ export async function enrichMatchFromSportsDb(input: {
     awayTeam = await searchTeam(input.awayTeam);
     if (awayTeam?.idTeam) {
       used += 1;
-      awayRecent = mapLastEvents(await lastEventsForTeam(awayTeam.idTeam));
+      awayRecent = mapLastEvents(await lastEventsForTeam(awayTeam.idTeam), mapOpts);
       notes.push(`Visitante resuelto vía searchteams free («${awayTeam.strTeam}»).`);
     } else {
       notes.push(`Sin equipo TheSportsDB free para visitante «${input.awayTeam}».`);
@@ -186,16 +215,20 @@ export async function enrichMatchFromSportsDb(input: {
       Math.round((totals.reduce((x, y) => x + y, 0) / totals.length) * 100) / 100;
   }
 
-  const rows: FormMatchRow[] = [...homeRecent, ...awayRecent]
-    .filter((r) => r.score)
-    .slice(0, 10)
-    .map((r, i) => ({
-      matchId: `sportsdb-${i}-${r.date ?? i}`,
-      label: r.label,
-      date: r.date ?? date,
-      score: r.score,
-      tip: null,
-    }));
+  const rows: FormMatchRow[] = sanitizeFormRows(
+    [...homeRecent, ...awayRecent]
+      .filter((r) => r.score)
+      .map((r, i) => ({
+        matchId: `sportsdb-${i}-${r.date ?? i}`,
+        label: r.label,
+        date: r.date ?? date,
+        score: r.score,
+        tip: null,
+      })),
+    input.homeTeam,
+    input.awayTeam,
+    input.league
+  ).slice(0, 10);
 
   const formPatch: Partial<TeamFormBlock> =
     rows.length > 0
@@ -250,7 +283,8 @@ export async function enrichMatchFromSportsDb(input: {
 
 export function mergeFormWithSportsDb(
   scraped: TeamFormBlock | undefined,
-  patch: Partial<TeamFormBlock>
+  patch: Partial<TeamFormBlock>,
+  ctx?: { homeTeam?: string; awayTeam?: string; league?: string | null }
 ): TeamFormBlock {
   const base = scraped ?? fallbackForm();
   if (!patch.available && !base.available) {
@@ -259,22 +293,60 @@ export function mergeFormWithSportsDb(
       message: patch.message ?? base.message,
     };
   }
-  const recentScores = [
-    ...(patch.recentScores ?? []),
-    ...(base.recentScores ?? []),
-  ].slice(0, 12);
-  const rows = [...(patch.rows ?? []), ...(base.rows ?? [])].slice(0, 12);
+
+  const mergedRows = sanitizeFormRows(
+    [...(patch.rows ?? []), ...(base.rows ?? [])],
+    ctx?.homeTeam ?? '',
+    ctx?.awayTeam ?? '',
+    ctx?.league
+  ).slice(0, 12);
+
+  const recentScores = mergedRows.map((r) => r.score!).filter(Boolean).slice(0, 12);
+
+  const h2h =
+    ctx?.homeTeam && ctx?.awayTeam
+      ? sanitizeFormRows(
+          [...(base.h2h ?? []), ...(patch.h2h ?? [])],
+          ctx.homeTeam,
+          ctx.awayTeam,
+          ctx.league
+        ).slice(0, 8)
+      : [...(base.h2h ?? []), ...(patch.h2h ?? [])].slice(0, 8);
+
+  const homeSeason =
+    ctx?.homeTeam && ctx?.awayTeam
+      ? sanitizeFormRows(
+          [...(base.homeSeason ?? []), ...(patch.homeSeason ?? [])],
+          ctx.homeTeam,
+          ctx.awayTeam,
+          ctx.league
+        ).slice(0, 8)
+      : [...(base.homeSeason ?? []), ...(patch.homeSeason ?? [])].slice(0, 8);
+
+  const awaySeason =
+    ctx?.homeTeam && ctx?.awayTeam
+      ? sanitizeFormRows(
+          [...(base.awaySeason ?? []), ...(patch.awaySeason ?? [])],
+          ctx.homeTeam,
+          ctx.awayTeam,
+          ctx.league
+        ).slice(0, 8)
+      : [...(base.awaySeason ?? []), ...(patch.awaySeason ?? [])].slice(0, 8);
+
   return {
     ...base,
     available: Boolean(recentScores.length || base.available),
     message:
       patch.available && base.available
-        ? 'Historia TheSportsDB + marcadores scrapeados. Análisis profundo sin inventar datos.'
+        ? 'Historia TheSportsDB + marcadores scrapeados. Misma categoría; alias deduplicados.'
         : patch.message ?? base.message,
     recentScores,
     avgGoalsTotal: patch.avgGoalsTotal ?? base.avgGoalsTotal,
-    sampleSize: Math.max(patch.sampleSize ?? 0, base.sampleSize),
-    rows,
+    sampleSize: Math.max(recentScores.length, base.sampleSize),
+    rows: mergedRows,
+    h2h,
+    homeSeason,
+    awaySeason,
   };
 }
 
@@ -304,7 +376,11 @@ export async function applySportsDbToPayload(
       ...payload,
       deepAnalysis: true,
       sportsDb: enriched.sportsDb,
-      form: mergeFormWithSportsDb(payload.form, enriched.formPatch),
+      form: mergeFormWithSportsDb(payload.form, enriched.formPatch, {
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        league: match.league,
+      }),
       match: {
         ...match,
         homeTeam: match.homeTeam,

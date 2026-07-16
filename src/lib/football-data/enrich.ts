@@ -6,10 +6,13 @@ import type { FormMatchRow, StructuredMatchPayload, TeamFormBlock } from '@/lib/
 import {
   findMatchContext,
   isFootballDataConfigured,
+  primaryRefereeName,
   scoreOf,
   type FdMatch,
   type FdStandingRow,
 } from '@/lib/football-data/client';
+import { applyContextFactorsToPayload } from '@/lib/ai/match-context-factors';
+import { sanitizeFormRows } from '@/lib/team-identity';
 
 function mapMatches(matches: FdMatch[]): FormMatchRow[] {
   return matches.map((m) => ({
@@ -42,8 +45,18 @@ export async function applyFootballDataToPayload(
       leagueHint: match.league,
     });
 
-    const homeSeason = mapMatches(ctx.recentHome).filter((r) => r.score);
-    const awaySeason = mapMatches(ctx.recentAway).filter((r) => r.score);
+    const homeSeason = sanitizeFormRows(
+      mapMatches(ctx.recentHome).filter((r) => r.score),
+      match.homeTeam,
+      match.awayTeam,
+      match.league
+    );
+    const awaySeason = sanitizeFormRows(
+      mapMatches(ctx.recentAway).filter((r) => r.score),
+      match.homeTeam,
+      match.awayTeam,
+      match.league
+    );
     const formBase: TeamFormBlock = payload.form ?? {
       available: false,
       message: '',
@@ -60,9 +73,24 @@ export async function applyFootballDataToPayload(
       awaySeason: [],
     };
 
-    const mergedHome = [...(formBase.homeSeason ?? []), ...homeSeason].slice(0, 10);
-    const mergedAway = [...(formBase.awaySeason ?? []), ...awaySeason].slice(0, 10);
-    const extraScores = [...homeSeason, ...awaySeason]
+    const mergedHome = sanitizeFormRows(
+      [...(formBase.homeSeason ?? []), ...homeSeason],
+      match.homeTeam,
+      match.awayTeam,
+      match.league
+    ).slice(0, 10);
+    const mergedAway = sanitizeFormRows(
+      [...(formBase.awaySeason ?? []), ...awaySeason],
+      match.homeTeam,
+      match.awayTeam,
+      match.league
+    ).slice(0, 10);
+    const extraScores = sanitizeFormRows(
+      [...homeSeason, ...awaySeason, ...(formBase.rows ?? [])],
+      match.homeTeam,
+      match.awayTeam,
+      match.league
+    )
       .map((r) => r.score!)
       .filter(Boolean)
       .slice(0, 8);
@@ -76,23 +104,31 @@ export async function applyFootballDataToPayload(
       ...formBase,
       available: formBase.available || homeSeason.length > 0 || awaySeason.length > 0 || Boolean(ctx.match),
       message: [formBase.message, ...ctx.notes, ...standingBits].filter(Boolean).join(' · '),
-      recentScores: [...extraScores, ...(formBase.recentScores ?? [])].slice(0, 12),
-      sampleSize: Math.max(formBase.sampleSize, homeSeason.length + awaySeason.length),
+      recentScores: extraScores,
+      sampleSize: Math.max(formBase.sampleSize, extraScores.length),
+      rows: sanitizeFormRows(
+        [...(formBase.rows ?? []), ...homeSeason, ...awaySeason],
+        match.homeTeam,
+        match.awayTeam,
+        match.league
+      ).slice(0, 12),
       homeSeason: mergedHome,
       awaySeason: mergedAway,
     };
 
     const ft = ctx.match ? scoreOf(ctx.match) : null;
+    const refName = primaryRefereeName(ctx.match);
     const edgeExtra = [
       ctx.match
         ? `football-data.org: ${ctx.match.homeTeam?.name} vs ${ctx.match.awayTeam?.name} [${ctx.match.status}${ft ? ` ${ft}` : ''}]`
         : null,
+      refName ? `Árbitro: ${refName}` : null,
       ...standingBits,
     ]
       .filter(Boolean)
       .join(' · ');
 
-    return {
+    const next: StructuredMatchPayload = {
       ...payload,
       form,
       edgeSummary: edgeExtra
@@ -122,6 +158,11 @@ export async function applyFootballDataToPayload(
         notes: ctx.notes,
       },
     };
+
+    return applyContextFactorsToPayload(next, {
+      refereeName: refName,
+      edgeNotes: ctx.notes,
+    });
   } catch (err) {
     return {
       ...payload,

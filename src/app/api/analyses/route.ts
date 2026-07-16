@@ -28,6 +28,13 @@ import { fetchMatchStatus } from '@/lib/sportsdb/match-status';
 import { buildMatchDiagnostics } from '@/lib/sportsdb/player-diagnostics';
 import { ANALYSIS_EXTERNAL_SOURCES } from '@/lib/ai/external-sources';
 import { mqPublish } from '@/lib/mq/bus';
+import {
+  isH2HPair,
+  isOutlierFootballScore,
+  matchInvolvesTeam,
+  sanitizeFormRows,
+  teamNameSearchVariants,
+} from '@/lib/team-identity';
 
 function attachSources(
   payload: StructuredMatchPayload,
@@ -184,42 +191,31 @@ function scoresFromPayload(payload: StructuredMatchPayload) {
 
 /**
  * Forma reciente + H2H + forma por equipo en temporada (solo marcadores reales).
+ * Alias-aware (FC Astana ≈ Astana) y misma categoría (sin mezclar mujeres/juveniles).
  */
-async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFormBlock> {
+async function loadTeamForm(
+  homeTeam: string,
+  awayTeam: string,
+  league?: string | null
+): Promise<TeamFormBlock> {
+  const variants = Array.from(
+    new Set([...teamNameSearchVariants(homeTeam), ...teamNameSearchVariants(awayTeam)])
+  );
   const history = await prisma.match.findMany({
     where: {
-      OR: [
-        { homeTeam: { contains: homeTeam.slice(0, 24) } },
-        { awayTeam: { contains: homeTeam.slice(0, 24) } },
-        { homeTeam: { contains: awayTeam.slice(0, 24) } },
-        { awayTeam: { contains: awayTeam.slice(0, 24) } },
-        { homeTeam },
-        { awayTeam },
-      ],
+      OR: variants.flatMap((v) => [
+        { homeTeam: { contains: v.slice(0, 32) } },
+        { awayTeam: { contains: v.slice(0, 32) } },
+      ]),
     },
     include: {
       predictions: { orderBy: { scrapedAt: 'desc' }, take: 2 },
     },
     orderBy: { matchDate: 'desc' },
-    take: 80,
+    take: 120,
   });
 
-  const norm = (s: string) => s.trim().toLowerCase();
-  const homeN = norm(homeTeam);
-  const awayN = norm(awayTeam);
-  const involves = (team: string, rowHome: string, rowAway: string) => {
-    const t = norm(team);
-    const h = norm(rowHome);
-    const a = norm(rowAway);
-    return h.includes(t) || a.includes(t) || t.includes(h) || t.includes(a);
-  };
-  const isH2H = (rowHome: string, rowAway: string) =>
-    involves(homeTeam, rowHome, rowAway) && involves(awayTeam, rowHome, rowAway);
-
-  const rows: FormMatchRow[] = [];
-  const h2h: FormMatchRow[] = [];
-  const homeSeason: FormMatchRow[] = [];
-  const awaySeason: FormMatchRow[] = [];
+  const rowsRaw: FormMatchRow[] = [];
   const goalSamples: number[] = [];
   let cardsTotal = 0;
   let cardsSamples = 0;
@@ -228,6 +224,7 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
     if (isJunkMatch(m.homeTeam, m.awayTeam)) continue;
     const note = m.predictions.map((p) => p.statsNote).filter(Boolean).join(' ');
     const score = extractScoreFromText(note) ?? extractScoreFromText(m.kickoff);
+    if (isOutlierFootballScore(score)) continue;
     const tip = m.predictions[0]?.betChoice ?? null;
     const row: FormMatchRow = {
       matchId: m.id,
@@ -236,11 +233,7 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
       score,
       tip,
     };
-    rows.push(row);
-
-    if (isH2H(m.homeTeam, m.awayTeam) && score) h2h.push(row);
-    if (involves(homeTeam, m.homeTeam, m.awayTeam) && score) homeSeason.push(row);
-    if (involves(awayTeam, m.homeTeam, m.awayTeam) && score) awaySeason.push(row);
+    rowsRaw.push(row);
 
     if (score) {
       const [a, b] = score.split('-').map(Number);
@@ -253,29 +246,66 @@ async function loadTeamForm(homeTeam: string, awayTeam: string): Promise<TeamFor
     }
   }
 
-  const withScore = rows.filter((r) => r.score).slice(0, 10);
-  const h2hScored = h2h.slice(0, 8);
-  const homeScored = homeSeason.slice(0, 8);
-  const awayScored = awaySeason.slice(0, 8);
+  const cleaned = sanitizeFormRows(rowsRaw, homeTeam, awayTeam, league);
+  const withScore = cleaned.filter((r) => r.score).slice(0, 10);
+
+  const h2hScored = cleaned
+    .filter((r) => {
+      if (!r.score) return false;
+      const parts = r.label.split(/\s+vs\.?\s+/i);
+      if (parts.length !== 2) return false;
+      return isH2HPair(homeTeam, awayTeam, parts[0].trim(), parts[1].trim());
+    })
+    .slice(0, 8);
+
+  const homeScored = cleaned
+    .filter((r) => {
+      if (!r.score) return false;
+      const parts = r.label.split(/\s+vs\.?\s+/i);
+      if (parts.length !== 2) return false;
+      return matchInvolvesTeam(homeTeam, parts[0].trim(), parts[1].trim());
+    })
+    .slice(0, 8);
+
+  const awayScored = cleaned
+    .filter((r) => {
+      if (!r.score) return false;
+      const parts = r.label.split(/\s+vs\.?\s+/i);
+      if (parts.length !== 2) return false;
+      return matchInvolvesTeam(awayTeam, parts[0].trim(), parts[1].trim());
+    })
+    .slice(0, 8);
 
   if (withScore.length === 0 && h2hScored.length === 0) {
     return emptyForm(
-      rows.length > 0
-        ? `Hay ${rows.length} partidos registrados de estos equipos, pero sin marcador scrapeado. No se inventan resultados.`
+      rowsRaw.length > 0
+        ? `Hay ${rowsRaw.length} partidos cercanos en nombre, pero tras filtrar alias/categoría/duplicados no quedan marcadores usables.`
         : undefined
     );
   }
 
+  const cleanGoalSamples = withScore
+    .map((r) => {
+      const [a, b] = (r.score ?? '').split('-').map(Number);
+      return Number.isNaN(a) || Number.isNaN(b) ? null : a + b;
+    })
+    .filter((n): n is number => n != null);
+
   const avgGoalsTotal =
-    goalSamples.length > 0
-      ? Math.round((goalSamples.reduce((s, n) => s + n, 0) / goalSamples.length) * 100) / 100
+    cleanGoalSamples.length > 0
+      ? Math.round(
+          (cleanGoalSamples.reduce((s, n) => s + n, 0) / cleanGoalSamples.length) * 100
+        ) / 100
       : null;
 
   const parts: string[] = [];
   if (withScore.length) parts.push(`${withScore.length} marcadores`);
   if (h2hScored.length) parts.push(`${h2hScored.length} H2H`);
   if (homeScored.length || awayScored.length) {
-    parts.push(`forma temporada ${homeN.slice(0, 12)}/${awayN.slice(0, 12)}`);
+    parts.push('forma temporada (misma categoría)');
+  }
+  if (rowsRaw.length > cleaned.length) {
+    parts.push(`filtrados ${rowsRaw.length - cleaned.length} dup/categoría/outlier`);
   }
 
   return {
@@ -364,7 +394,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const form = await loadTeamForm(matchForAi.homeTeam, matchForAi.awayTeam);
+      const form = await loadTeamForm(
+        matchForAi.homeTeam,
+        matchForAi.awayTeam,
+        matchForAi.league
+      );
       emit({
         type: 'progress',
         step: 'h2h',
@@ -431,7 +465,7 @@ export async function POST(request: Request) {
       emit({
         type: 'progress',
         step: 'poisson',
-        message: 'Ejecutando modelo neuronal Poisson…',
+        message: 'Ejecutando Red Neuronal (Poisson)…',
         pct: 52,
       });
       let payload = buildModelPayload(ctx, 'MATCH', { form });

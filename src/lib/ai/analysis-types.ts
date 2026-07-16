@@ -95,6 +95,31 @@ export type AnalysisBrief = {
   limitations: string[];
 };
 
+/** Perfil arbitral (API, LLM o inferido; nunca inventar nombre sin fuente). */
+export type AnalysisReferee = {
+  name: string | null;
+  style: 'strict' | 'lenient' | 'balanced' | 'unknown';
+  cardsTendency: 'high' | 'low' | 'avg' | 'unknown';
+  notes: string;
+  source: 'api' | 'llm' | 'inferred' | 'none';
+};
+
+export type AnalysisAbsence = {
+  player: string;
+  reason: string;
+  impact: 'high' | 'medium' | 'low';
+};
+
+export type AnalysisScenario = {
+  id: string;
+  label: string;
+  assumptions: string;
+  impactSummary: string;
+  /** Desplazamientos en puntos % sobre 1X2 del escenario base */
+  probShifts: { home: number; draw: number; away: number };
+  focusMarkets: string[];
+};
+
 export type StructuredMatchPayload = {
   mode: 'MATCH' | 'RANDOM' | 'ACCUMULATOR';
   match?: {
@@ -225,4 +250,24 @@ export type StructuredMatchPayload = {
     }>;
     notes: string[];
   } | null;
+  /** Árbitro: estilo y tendencia a tarjetas/faltas */
+  referee?: AnalysisReferee;
+  /** Bajas / dudas reportadas (sin inventar si no hay fuente) */
+  absences?: {
+    home: AnalysisAbsence[];
+    away: AnalysisAbsence[];
+    notes: string;
+    source: 'api' | 'llm' | 'inferred' | 'none';
+  };
+  /** Escenarios what-if (base, árbitro estricto/permisivo, bajas) */
+  scenarios?: AnalysisScenario[];
+  /** Multiplicadores aplicados a mercados de disciplina/goles */
+  contextMultipliers?: {
+    cards: number;
+    fouls: number;
+    goals: number;
+    note: string;
+  };
+  /** Mercados antes del ajuste arbitral/bajas (para reaplicar sin acumular) */
+  marketsBase?: AnalysisMarket[];
 };

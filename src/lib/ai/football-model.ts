@@ -18,6 +18,10 @@ export type MatchContext = {
   liveAwayScore?: number | null;
   livePhase?: 'scheduled' | 'live' | 'finished' | 'unknown' | null;
   liveMinute?: number | null;
+  /** Perfil arbitral para proxies de tarjetas/faltas */
+  refereeStyle?: 'strict' | 'lenient' | 'balanced' | 'unknown';
+  /** Multiplicador de goles por bajas (1 = sin impacto) */
+  absenceGoalMult?: number;
 };
 
 export type ModelProbs = {

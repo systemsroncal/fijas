@@ -14,14 +14,18 @@ import {
 import { callProvider } from '@/lib/ai/providers';
 import type {
   AiAttemptLog,
+  AnalysisAbsence,
   AnalysisMarket,
   AnalysisPick,
+  AnalysisReferee,
+  AnalysisScenario,
   ProposedAccumulator,
   RelatedMatchRow,
   StructuredMatchPayload,
   TeamFormBlock,
 } from '@/lib/ai/analysis-types';
 import { buildAnalysisBrief, sanitizeNarrative } from '@/lib/ai/analysis-brief';
+import { applyContextFactorsToPayload } from '@/lib/ai/match-context-factors';
 import {
   areMarketsCompatible,
   detectSport,
@@ -375,11 +379,11 @@ export function buildModelPayload(
       bestEdge ? labelMarket(bestEdge.market, bestEdge.line, home, away) : 'N/A'
     }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}.`,
     disclaimer:
-      'Análisis profundo: scraping + TheSportsDB (si hay match) + modelo Poisson. No se inventan marcadores, tiros ni props. Cuotas sin casa = implícitas del modelo.',
+      'Análisis profundo: scraping + TheSportsDB (si hay match) + modelo Poisson. No se inventan marcadores, tiros ni props. Cuotas sin casa = implícitas del modelo. Árbitro/bajas/escenarios: API o inferidos; si no hay dato, se marca unknown.',
     model: probs,
   };
   payload.brief = buildAnalysisBrief(payload);
-  return payload;
+  return applyContextFactorsToPayload(payload);
 }
 
 function extractJson(raw: string): unknown {
@@ -428,10 +432,13 @@ Obligatorio:
 3) Comenta posesión, tiros (totales/a puerta), córners, faltas, tarjetas si existen en teamStats.
 4) Comenta jugadores destacados de "players" (goles, asistencias, tarjetas, tiros a puerta mínimos).
 5) Si falta un dato (p.ej. tackles por jugador), dilo: la API free no lo trae; NO lo inventes.
-6) Evalúa 1X2, value/safe/risky y riesgos concretos.
+6) Evalúa 1X2, value/safe/risky y riesgos concretos. Incluye disciplina (tarjetas/faltas) según perfil de árbitro.
 7) Si hay marcador live/FT, priorízalo sobre el pre-partido.
-8) Responde SOLO JSON válido:
-{"edgeText":"<análisis en español, 6-12 frases, con secciones: H2H/forma, Marcador, Stats, Jugadores, Apuestas>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>","statHighlights":["<hallazgo 1>","<hallazgo 2>","<hallazgo 3>"]}
+8) ÁRBITRO: si "referee.name" existe úsalo; si no, style=unknown y NO inventes nombre. Estilos: strict (cobra todo / muchas tarjetas), lenient (deja jugar), balanced, unknown.
+9) BAJAS: solo lista jugadores si aparecen en tip/notas/datos; si no hay fuente, arrays vacíos y notes explicando que no hay listado confirmado.
+10) ESCENARIOS: 2-4 what-if (base, árbitro estricto, árbitro permisivo, impacto bajas) con probShifts en puntos % sobre 1X2.
+11) Responde SOLO JSON válido:
+{"edgeText":"<análisis en español, 6-14 frases: H2H/forma, Árbitro/disciplina, Bajas, Marcador, Stats, Apuestas>","confidenceDelta":<-5 a 8>,"depthNotes":"<qué datos usaste y cuáles faltaron>","statHighlights":["<hallazgo 1>","<hallazgo 2>","<hallazgo 3>"],"referee":{"name":null,"style":"unknown","cardsTendency":"unknown","notes":"<texto>"},"absences":{"home":[],"away":[],"notes":"<texto>"},"scenarios":[{"id":"base","label":"Escenario base","assumptions":"<texto>","impactSummary":"<texto>","probShifts":{"home":0,"draw":0,"away":0},"focusMarkets":["1X2"]}]}
 ${liveHint}
 
 Datos:
@@ -446,11 +453,33 @@ ${JSON.stringify({
     awaySeason,
     sportsDb: base.sportsDb ?? null,
     matchDiagnostics: base.matchDiagnostics ?? null,
-    markets: base.markets.slice(0, 12),
+    referee: base.referee ?? null,
+    absences: base.absences ?? null,
+    scenarios: base.scenarios ?? null,
+    markets: base.markets.slice(0, 14),
     picks: base.picks,
     accumulatorMeta: base.accumulatorMeta ?? null,
     liveContext: base.accumulatorMeta?.liveContext ?? null,
   })}`;
+}
+
+function parseAbsences(list: unknown): AnalysisAbsence[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((a) => {
+      if (!a || typeof a !== 'object') return null;
+      const row = a as Record<string, unknown>;
+      const player = typeof row.player === 'string' ? row.player.trim() : '';
+      if (!player || player.length < 2) return null;
+      const reason = typeof row.reason === 'string' ? row.reason.trim().slice(0, 80) : 'n/d';
+      const impact =
+        row.impact === 'high' || row.impact === 'medium' || row.impact === 'low'
+          ? row.impact
+          : 'medium';
+      return { player, reason, impact } as AnalysisAbsence;
+    })
+    .filter((x): x is AnalysisAbsence => Boolean(x))
+    .slice(0, 8);
 }
 
 function applyLlmJson(
@@ -464,6 +493,13 @@ function applyLlmJson(
     confidenceDelta?: number;
     depthNotes?: string;
     statHighlights?: string[];
+    referee?: Partial<AnalysisReferee> & { notes?: string };
+    absences?: {
+      home?: AnalysisAbsence[];
+      away?: AnalysisAbsence[];
+      notes?: string;
+    };
+    scenarios?: AnalysisScenario[];
   };
   const cleaned = sanitizeNarrative(data.edgeText, base.edgeSummary);
   const highlights = Array.isArray(data.statHighlights)
@@ -480,6 +516,72 @@ function applyLlmJson(
     ? `\n\nHallazgos stats: ${highlights.map((h) => `• ${h}`).join(' ')}`
     : '';
 
+  const styleOk = (s: unknown): s is AnalysisReferee['style'] =>
+    s === 'strict' || s === 'lenient' || s === 'balanced' || s === 'unknown';
+  const tendOk = (s: unknown): s is AnalysisReferee['cardsTendency'] =>
+    s === 'high' || s === 'low' || s === 'avg' || s === 'unknown';
+
+  const llmName =
+    typeof data.referee?.name === 'string' && data.referee.name.trim().length > 1
+      ? data.referee.name.trim()
+      : null;
+  // Solo conservar nombre si ya venía de API; no aceptar nombres inventados por el LLM
+  const referee: AnalysisReferee = {
+    name: base.referee?.name ?? null,
+    style: styleOk(data.referee?.style)
+      ? data.referee!.style!
+      : base.referee?.style ?? 'unknown',
+    cardsTendency: tendOk(data.referee?.cardsTendency)
+      ? data.referee!.cardsTendency!
+      : base.referee?.cardsTendency ?? 'unknown',
+    notes: [
+      typeof data.referee?.notes === 'string' ? data.referee.notes.trim().slice(0, 400) : '',
+      llmName && !base.referee?.name
+        ? `(LLM sugirió nombre "${llmName}" sin fuente API — ignorado)`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ') ||
+      base.referee?.notes ||
+      'Sin notas de árbitro.',
+    source: base.referee?.source === 'api' ? 'api' : data.referee ? 'llm' : base.referee?.source ?? 'none',
+  };
+
+  const homeAbs = parseAbsences(data.absences?.home);
+  const awayAbs = parseAbsences(data.absences?.away);
+  const absences = {
+    home: homeAbs.length ? homeAbs : base.absences?.home ?? [],
+    away: awayAbs.length ? awayAbs : base.absences?.away ?? [],
+    notes:
+      typeof data.absences?.notes === 'string' && data.absences.notes.trim()
+        ? data.absences.notes.trim().slice(0, 300)
+        : base.absences?.notes ?? 'Sin listado de bajas confirmado.',
+    source: (homeAbs.length || awayAbs.length
+      ? 'llm'
+      : base.absences?.source ?? 'none') as 'api' | 'llm' | 'inferred' | 'none',
+  };
+
+  const scenarios =
+    Array.isArray(data.scenarios) && data.scenarios.length > 0
+      ? data.scenarios
+          .filter((s) => s && typeof s.label === 'string')
+          .slice(0, 5)
+          .map((s, i) => ({
+            id: typeof s.id === 'string' ? s.id : `s${i}`,
+            label: String(s.label).slice(0, 80),
+            assumptions: String(s.assumptions ?? '').slice(0, 240),
+            impactSummary: String(s.impactSummary ?? '').slice(0, 240),
+            probShifts: {
+              home: Number(s.probShifts?.home ?? 0),
+              draw: Number(s.probShifts?.draw ?? 0),
+              away: Number(s.probShifts?.away ?? 0),
+            },
+            focusMarkets: Array.isArray(s.focusMarkets)
+              ? s.focusMarkets.filter((x): x is string => typeof x === 'string').slice(0, 6)
+              : [],
+          }))
+      : base.scenarios;
+
   const next: StructuredMatchPayload = {
     ...base,
     deepAnalysis: true,
@@ -494,9 +596,13 @@ function applyLlmJson(
     edgeSummary: `${cleaned}${hiBlock}${depth}`,
     confidence: clamp(base.confidence + Number(data.confidenceDelta ?? 0), 30, 92),
     disclaimer: base.disclaimer,
+    referee,
+    absences,
+    scenarios,
   };
-  next.brief = buildAnalysisBrief(next);
-  return next;
+  const adjusted = applyContextFactorsToPayload(next);
+  adjusted.brief = buildAnalysisBrief(adjusted);
+  return adjusted;
 }
 
 /**
@@ -527,7 +633,7 @@ export async function enrichPayloadWithLlm(
     const detail = err instanceof Error ? err.message.slice(0, 180) : 'error';
     onProgress?.({
       step: 'ai',
-      message: `Cascada IA abortada (${detail}) → neuronal`,
+      message: `Cascada IA abortada (${detail}) → Red Neuronal`,
       ok: false,
       pct: 90,
     });
@@ -542,7 +648,7 @@ export async function enrichPayloadWithLlm(
         neuralOnly: true,
         attempts: [{ provider: preferred, status: 'fail', detail }],
       },
-      edgeSummary: `${base.edgeSummary}\n\n[Neuronal] Fallback forzado tras error de IA: ${detail}`,
+      edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] Fallback forzado tras error de IA: ${detail}`,
     };
     neural.brief = buildAnalysisBrief(neural);
     return {
@@ -581,7 +687,7 @@ async function enrichPayloadWithLlmInner(
   if (withKeys.length === 0) {
     onProgress?.({
       step: 'ai',
-      message: 'Sin API keys activas → análisis neuronal (solo modelo Poisson)',
+      message: 'Sin API keys activas → Red Neuronal',
       pct: 88,
     });
     const neural: StructuredMatchPayload = {
@@ -601,7 +707,7 @@ async function enrichPayloadWithLlmInner(
           },
         ],
       },
-      edgeSummary: `${base.edgeSummary}\n\n[Neuronal] Sin IA externa: resultado del modelo Poisson + historial/H2H/TheSportsDB disponibles.`,
+      edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] Sin IA externa: resultado del modelo Poisson + historial/H2H/TheSportsDB disponibles.`,
     };
     neural.brief = buildAnalysisBrief(neural);
     return {
@@ -671,7 +777,7 @@ async function enrichPayloadWithLlmInner(
 
   onProgress?.({
     step: 'ai',
-    message: 'Todas las IA fallaron → análisis neuronal (solo modelo)',
+    message: 'Todas las IA fallaron → Red Neuronal',
     pct: 90,
   });
   const neural: StructuredMatchPayload = {
@@ -685,7 +791,7 @@ async function enrichPayloadWithLlmInner(
       neuralOnly: true,
       attempts,
     },
-    edgeSummary: `${base.edgeSummary}\n\n[Neuronal] IAs no disponibles. Se entrega el modelo Poisson + H2H/forma/TheSportsDB sin narrativa LLM.`,
+    edgeSummary: `${base.edgeSummary}\n\n[Red Neuronal] IAs no disponibles. Se entrega el modelo Poisson + H2H/forma/TheSportsDB sin narrativa LLM.`,
   };
   neural.brief = buildAnalysisBrief(neural);
   return {
