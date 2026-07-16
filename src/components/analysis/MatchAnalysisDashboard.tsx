@@ -40,6 +40,7 @@ import MatchResultStatsPanel from '@/components/analysis/MatchResultStatsPanel';
 import MatchPredictionPanel from '@/components/analysis/MatchPredictionPanel';
 import { proxiedMediaUrl } from '@/lib/media-proxy';
 import { exportNodeToPng } from '@/lib/export-png';
+import { translateAnalysisMode, translateVerdict } from '@/lib/ai/labels-es';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -235,9 +236,9 @@ export default function MatchAnalysisDashboard({
           formatter: (v: number, opts: { dataPointIndex: number }) => {
             const row = edgeMarkets[opts.dataPointIndex];
             if (!row) return `${Number(v).toFixed(1)}%`;
-            return `Prob ${row.aiProb.toFixed(1)}% · cuota ${row.odds.toFixed(2)} · edge ${
+            return `Prob. ${row.aiProb.toFixed(1)}% · cuota ${row.odds.toFixed(2)} · ventaja ${
               row.edge >= 0 ? '+' : ''
-            }${row.edge.toFixed(1)} · ${row.verdict}`;
+            }${row.edge.toFixed(1)} · ${translateVerdict(row.verdict)}`;
           },
         },
       },
@@ -342,7 +343,7 @@ export default function MatchAnalysisDashboard({
                 <SportIcon sport={m?.sport} />
                 <Typography variant="overline" color="text.secondary">
                   {sportLabel((m?.sport as SportKind) ?? 'football')} · {m?.league ?? 'Scanner'} ·{' '}
-                  {payload.mode}
+                  {translateAnalysisMode(payload.mode)}
                 </Typography>
                 {payload.aiCascade?.neuralOnly || (!payload.llmUsed && payload.aiCascade) ? (
                   <Chip
@@ -496,7 +497,7 @@ export default function MatchAnalysisDashboard({
                   )}
               </Stack>
               <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                Verde value · azul seguro · ámbar arriesgado · rojo evitar. Tooltip: cuota + edge.
+                Verde valor · azul seguro · ámbar arriesgado · rojo evitar. Tooltip: cuota + ventaja.
               </Typography>
               <Box data-export-ignore="1">
                 <Chart
@@ -517,8 +518,8 @@ export default function MatchAnalysisDashboard({
                     <TableCell>Mercado</TableCell>
                     <TableCell align="right">Cuota</TableCell>
                     <TableCell align="right">Prob. IA</TableCell>
-                    <TableCell align="right">Edge</TableCell>
-                    <TableCell align="center">Rec.</TableCell>
+                    <TableCell align="right">Ventaja</TableCell>
+                    <TableCell align="center">Veredicto</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -554,7 +555,7 @@ export default function MatchAnalysisDashboard({
                       <TableCell align="center">
                         <Chip
                           size="small"
-                          label={row.verdict}
+                          label={translateVerdict(row.verdict)}
                           color={verdictColor[row.verdict] ?? 'default'}
                         />
                       </TableCell>
@@ -1117,7 +1118,7 @@ export default function MatchAnalysisDashboard({
                       <Chip
                         size="small"
                         sx={{ mt: 1 }}
-                        label={row.verdict}
+                        label={translateVerdict(row.verdict)}
                         color={verdictColor[row.verdict] ?? 'default'}
                       />
                     </Box>
@@ -1135,7 +1136,7 @@ export default function MatchAnalysisDashboard({
           >
             {(
               [
-                ['Value', payload.picks.value, 'success.light'],
+                ['Valor', payload.picks.value, 'success.light'],
                 ['Seguro', payload.picks.safe, 'info.light'],
                 ['Arriesgado', payload.picks.risky, 'warning.light'],
                 ['Evitar', payload.picks.avoid, 'error.light'],

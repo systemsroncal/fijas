@@ -266,7 +266,7 @@ export function buildModelPayload(
   }
   if (value && safe && value.market !== safe.market && areMarketsCompatible(safe.market, value.market)) {
     proposed.push({
-      title: `Value mismo partido · ${label}`,
+      title: `Valor mismo partido · ${label}`,
       riskTier: 'value',
       totalOdds: Math.round(safe.odds * value.odds * 1000) / 1000,
       legs: [legFromEdge(safe, ctx, label), legFromEdge(value, ctx, label)],
@@ -1026,7 +1026,7 @@ export function buildRandomScannerPayload(
     // Solo si los mercados no son idénticos
     if (new Set(legs.map((l) => l.market.replace(/^.+·\s*/, ''))).size >= 1) {
       proposed.push({
-        title: 'Combinada value (huecos aleatorios)',
+        title: 'Combinada valor (huecos aleatorios)',
         riskTier: 'value',
         totalOdds: Math.round(legs.reduce((acc, l) => acc * l.odds, 1) * 1000) / 1000,
         legs,

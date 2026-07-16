@@ -3,6 +3,7 @@
 import { Box, Chip, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import type { FormMatchRow, StructuredMatchPayload } from '@/lib/ai/analysis-types';
+import { formResultLabelEs } from '@/lib/ai/labels-es';
 import type { ModelProbs } from '@/lib/ai/football-model';
 import { goalsForTeamInRow } from '@/lib/ai/form-stats';
 
@@ -113,7 +114,7 @@ export default function MatchPredictionPanel({
             </Typography>
             {topScore && topScore.score !== payload.scoreline.mostLikely && (
               <Typography variant="body2" color="text.secondary">
-                Poisson top: {topScore.score} ({topScore.prob}%)
+                Poisson principal: {topScore.score} ({topScore.prob}%)
               </Typography>
             )}
           </Box>
@@ -209,7 +210,7 @@ export default function MatchPredictionPanel({
       {modelStats?.over25 != null && (
         <Stack direction="row" flexWrap="wrap" gap={1}>
           <Chip size="small" label={`+2.5 goles ${Math.round(modelStats.over25 * 100)}%`} />
-          <Chip size="small" label={`BTTS ${Math.round(modelStats.bttsYes * 100)}%`} />
+          <Chip size="small" label={`Ambos marcan ${Math.round(modelStats.bttsYes * 100)}%`} />
         </Stack>
       )}
 
@@ -241,6 +242,13 @@ export default function MatchPredictionPanel({
                       }}
                     >
                       <Box
+                        title={
+                          m.result === 'W'
+                            ? 'Victoria'
+                            : m.result === 'D'
+                              ? 'Empate'
+                              : 'Derrota'
+                        }
                         sx={{
                           width: 28,
                           height: 28,
@@ -254,7 +262,7 @@ export default function MatchPredictionPanel({
                           fontSize: 12,
                         }}
                       >
-                        {m.result}
+                        {formResultLabelEs[m.result]}
                       </Box>
                       <Typography variant="body2" fontWeight={600} sx={{ minWidth: 36 }}>
                         {m.score}

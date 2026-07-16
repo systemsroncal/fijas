@@ -19,6 +19,7 @@ import {
   Typography,
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
+import { translateMatchPhase } from '@/lib/ai/labels-es';
 import { apiUrl } from '@/lib/paths';
 
 type Summary = {
@@ -126,7 +127,7 @@ export default function AnalysesPerformancePage() {
             Rendimiento y aciertos
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Compara picks de análisis previos con marcadores finales. Los mercados de stats
+            Compara selecciones de análisis previos con marcadores finales. Los mercados de stats
             (córners, remates, etc.) requieren box-score y se marcan N/D si solo hay goles.
           </Typography>
         </Box>
@@ -165,7 +166,7 @@ export default function AnalysesPerformancePage() {
             <Card sx={{ flex: 1 }}>
               <CardContent>
                 <Typography variant="overline" color="text.secondary">
-                  % aciertos (picks evaluables)
+                  % aciertos (selecciones evaluables)
                 </Typography>
                 <Typography variant="h3" fontWeight={700} color="success.main">
                   {hitPct != null ? `${hitPct}%` : '—'}
@@ -249,7 +250,7 @@ export default function AnalysesPerformancePage() {
                           )}
                           {r.phase && (
                             <Typography variant="caption" display="block" color="text.secondary">
-                              {r.phase}
+                              {translateMatchPhase(r.phase)}
                             </Typography>
                           )}
                         </TableCell>
@@ -257,7 +258,7 @@ export default function AnalysesPerformancePage() {
                           <Stack spacing={0.5}>
                             {r.picks.length === 0 && (
                               <Typography variant="caption" color="text.secondary">
-                                Sin picks estructurados
+                                Sin selecciones estructuradas
                               </Typography>
                             )}
                             {r.picks.map((p, i) => (

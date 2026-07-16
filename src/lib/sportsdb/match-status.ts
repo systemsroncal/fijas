@@ -643,7 +643,7 @@ export async function fetchMatchStatus(input: {
 
     const ko = resolveEventKickoffPeru(event);
     if (ko.kickoffPeru) {
-      notes.push(`Hora de saque (TheSportsDB): ${ko.kickoffPeru} hora Perú.`);
+      notes.push(`Hora de inicio (TheSportsDB): ${ko.kickoffPeru} hora Perú.`);
     }
 
     return {

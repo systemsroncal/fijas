@@ -327,7 +327,7 @@ export default function MatchResultStatsPanel({
       >
         {status.kickoffPeru && (
           <Typography variant="caption" fontWeight={600}>
-            Saque {status.kickoffPeru} (PE)
+            Inicio {status.kickoffPeru} (PE)
           </Typography>
         )}
         {status.date && (

@@ -28,6 +28,7 @@ import AnalysisProgressDialog from '@/components/analysis/AnalysisProgressDialog
 import type { AnalysisProgressEvent, StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { detectSport, isJunkMatch, type SportKind } from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
+import { translateAnalysisMode } from '@/lib/ai/labels-es';
 
 type Accumulator = {
   id: string;
@@ -322,7 +323,7 @@ export default function AnalysesPage() {
           ? 'Red Neuronal'
           : cascade?.used || a?.iaProvider || provider;
       setResultMsg(
-        `${force || override?.matchId ? 'Reanálisis' : 'Análisis'}: Riesgo ${a?.riskScore} · EV ${a?.evScore} · Stake ${a?.recommendedStake} · ${engine}`
+        `${force || override?.matchId ? 'Reanálisis' : 'Análisis'}: Riesgo ${a?.riskScore} · Valor esperado ${a?.evScore} · Apuesta ${a?.recommendedStake} · ${engine}`
       );
 
       if (activeMode === 'ACCUMULATOR' && !force) setAccumulatorId('');
@@ -604,7 +605,7 @@ export default function AnalysesPage() {
                           mb={1}
                           flexWrap="wrap"
                         >
-                          <Chip size="small" label={a.mode ?? 'ACCUMULATOR'} />
+                          <Chip size="small" label={translateAnalysisMode(a.mode ?? 'ACCUMULATOR')} />
                           <Typography fontWeight={600}>
                             {a.match
                               ? `${a.match.homeTeam} vs ${a.match.awayTeam}`
@@ -633,8 +634,8 @@ export default function AnalysesPage() {
                           </Button>
                         </Stack>
                         <Typography variant="body2" color="textSecondary">
-                          Riesgo {a.riskScore} · EV {a.evScore} · Stake {a.recommendedStake}
-                          {' · '}Al abrir verás marcador/stats (live o FT) + predicción guardada.
+                          Riesgo {a.riskScore} · Valor esperado {a.evScore} · Apuesta {a.recommendedStake}
+                          {' · '}Al abrir verás marcador/stats (en vivo o final) + predicción guardada.
                         </Typography>
                       </CardContent>
                     </Card>

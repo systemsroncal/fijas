@@ -160,7 +160,7 @@ export function evaluateAnalysisPayload(
     const pending: EvaluatedPick[] = [];
     if (payload?.picks?.value) {
       pending.push({
-        label: pickLabel(payload.picks.value.market, 'Value'),
+        label: pickLabel(payload.picks.value.market, 'Valor'),
         market: payload.picks.value.market,
         status: 'pending',
         reason: 'Partido no finalizado o sin marcador',
@@ -168,7 +168,7 @@ export function evaluateAnalysisPayload(
     }
     if (payload?.picks?.safe) {
       pending.push({
-        label: pickLabel(payload.picks.safe.market, 'Safe'),
+        label: pickLabel(payload.picks.safe.market, 'Seguro'),
         market: payload.picks.safe.market,
         status: 'pending',
         reason: 'Partido no finalizado o sin marcador',
@@ -200,9 +200,9 @@ export function evaluateAnalysisPayload(
     });
   };
 
-  if (payload?.picks?.value?.market) add('Value', payload.picks.value.market);
+  if (payload?.picks?.value?.market) add('Valor', payload.picks.value.market);
   if (payload?.picks?.safe?.market && payload.picks.safe.market !== payload.picks.value?.market) {
-    add('Safe', payload.picks.safe.market);
+    add('Seguro', payload.picks.safe.market);
   }
   if (payload?.match?.tip) {
     const tip = normalizeTip(payload.match.tip);
@@ -216,7 +216,7 @@ export function evaluateAnalysisPayload(
   // Top market por edge si no hay picks
   if (out.length === 0 && payload?.markets?.length) {
     const best = [...payload.markets].sort((a, b) => b.edge - a.edge)[0];
-    if (best) add('Top edge', best.market);
+    if (best) add('Mejor ventaja', best.market);
   }
 
   return out;

@@ -134,8 +134,8 @@ export default function AccumulatorAnalysisCard({ result }: { result: Accumulato
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={2}>
           <Chip label={`Riesgo ${risk}`} color="warning" variant="outlined" />
-          <Chip label={`EV ${ev}`} color="success" variant="outlined" />
-          <Chip label={`Stake ${stake}`} color="info" variant="outlined" />
+          <Chip label={`Valor esperado ${ev}`} color="success" variant="outlined" />
+          <Chip label={`Apuesta ${stake}`} color="info" variant="outlined" />
           <Chip label={result.provider} color="primary" />
         </Stack>
 
