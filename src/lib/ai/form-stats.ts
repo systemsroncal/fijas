@@ -5,6 +5,11 @@
 import type { FormMatchRow } from '@/lib/ai/analysis-types';
 import { sameTeamIdentity } from '@/lib/team-identity';
 
+/** Mínimo deseado de partidos recientes por equipo para modelo y UI. */
+export const RECENT_MATCHES_MIN = 6;
+/** Máximo de partidos recientes por equipo que se cargan, fusionan y muestran. */
+export const RECENT_MATCHES_MAX = 15;
+
 export type TeamRecentForm = {
   avgGoalsFor: number;
   avgGoalsAgainst: number;
@@ -57,7 +62,7 @@ export function summarizeTeamForm(
   teamName: string,
   opts?: { maxRows?: number; leagueHint?: string | null; excludeOpponent?: string | null }
 ): TeamRecentForm | null {
-  const maxRows = opts?.maxRows ?? 12;
+  const maxRows = opts?.maxRows ?? RECENT_MATCHES_MAX;
   let weightedGf = 0;
   let weightedGa = 0;
   let weightedW = 0;
@@ -140,12 +145,12 @@ export function applyFormToMatchContext<
 
   // Forma reciente SIN el rival directo en la muestra (H2H aparte, peso mínimo)
   const formHome = summarizeTeamForm(homeSeason, ctx.homeTeam, {
-    maxRows: 12,
+    maxRows: RECENT_MATCHES_MAX,
     leagueHint: ctx.league,
     excludeOpponent: ctx.awayTeam,
   });
   const formAway = summarizeTeamForm(awaySeason, ctx.awayTeam, {
-    maxRows: 12,
+    maxRows: RECENT_MATCHES_MAX,
     leagueHint: ctx.league,
     excludeOpponent: ctx.homeTeam,
   });

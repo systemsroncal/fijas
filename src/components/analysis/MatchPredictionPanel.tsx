@@ -5,7 +5,7 @@ import { useTheme } from '@mui/material/styles';
 import type { FormMatchRow, StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { formResultLabelEs } from '@/lib/ai/labels-es';
 import type { ModelProbs } from '@/lib/ai/football-model';
-import { goalsForTeamInRow } from '@/lib/ai/form-stats';
+import { RECENT_MATCHES_MAX, goalsForTeamInRow } from '@/lib/ai/form-stats';
 
 const RESULT_COLORS = {
   W: '#2e7d32',
@@ -13,7 +13,7 @@ const RESULT_COLORS = {
   L: '#d32f2f',
 } as const;
 
-function formStrip(rows: FormMatchRow[] | undefined, teamName: string, max = 6) {
+function formStrip(rows: FormMatchRow[] | undefined, teamName: string, max = RECENT_MATCHES_MAX) {
   if (!rows?.length) return [];
   return rows
     .slice(0, max)

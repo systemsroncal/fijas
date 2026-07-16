@@ -151,7 +151,7 @@ export async function fetchStandings(code: string): Promise<FdStandingRow[]> {
 export async function fetchTeamMatches(
   teamId: number,
   status: 'FINISHED' | 'SCHEDULED' = 'FINISHED',
-  limit = 10
+  limit = 15
 ): Promise<FdMatch[]> {
   const data = await fdGet<FdTeamMatches>(
     `/teams/${teamId}/matches?status=${status}&limit=${limit}`
@@ -161,6 +161,14 @@ export async function fetchTeamMatches(
 
 function teamMatch(a: string, b: string): boolean {
   return sameTeamIdentity(a, b);
+}
+
+function findTeamIdInDayMatches(teamName: string, matches: FdMatch[]): number | undefined {
+  for (const m of matches) {
+    if (teamMatch(m.homeTeam?.name ?? '', teamName)) return m.homeTeam?.id;
+    if (teamMatch(m.awayTeam?.name ?? '', teamName)) return m.awayTeam?.id;
+  }
+  return undefined;
 }
 
 /**
@@ -250,24 +258,32 @@ export async function findMatchContext(input: {
     }
   }
 
-  // Forma reciente (máx. 2 req más si hay ids) — cuidado con cuota free
-  if (hit?.homeTeam?.id && hit?.awayTeam?.id) {
+  // Forma reciente — hasta 2 req más si hay ids (exact hit o equipo en calendario de hoy)
+  const homeTeamId = hit?.homeTeam?.id ?? findTeamIdInDayMatches(input.homeTeam, matches);
+  const awayTeamId = hit?.awayTeam?.id ?? findTeamIdInDayMatches(input.awayTeam, matches);
+
+  if (homeTeamId) {
     try {
       used += 1;
-      recentHome = await fetchTeamMatches(hit.homeTeam.id, 'FINISHED', 10);
+      recentHome = await fetchTeamMatches(homeTeamId, 'FINISHED', 15);
       notes.push(`Forma API local: ${recentHome.length} FT.`);
     } catch (err) {
       notes.push(err instanceof Error ? err.message : 'Error team home');
     }
+  }
+  if (awayTeamId) {
     try {
       used += 1;
-      recentAway = await fetchTeamMatches(hit.awayTeam.id, 'FINISHED', 10);
+      recentAway = await fetchTeamMatches(awayTeamId, 'FINISHED', 15);
       notes.push(`Forma API visitante: ${recentAway.length} FT.`);
     } catch (err) {
       notes.push(err instanceof Error ? err.message : 'Error team away');
     }
-  } else if (!hit) {
+  }
+  if (!hit && !homeTeamId && !awayTeamId) {
     notes.push('Sin partido exacto en /matches de hoy para este par.');
+  } else if (!hit && (homeTeamId || awayTeamId)) {
+    notes.push('Forma vía equipo en calendario de hoy (sin H2H exacto en /matches).');
   }
 
   return {

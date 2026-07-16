@@ -37,7 +37,7 @@ import {
   sanitizeFormRows,
   teamNameSearchVariants,
 } from '@/lib/team-identity';
-import { summarizeTeamForm } from '@/lib/ai/form-stats';
+import { RECENT_MATCHES_MAX, RECENT_MATCHES_MIN, summarizeTeamForm } from '@/lib/ai/form-stats';
 
 /** Vercel/Netlify: margen para cascada IA + fuentes externas */
 export const maxDuration = 300;
@@ -348,7 +348,7 @@ async function loadTeamForm(
   const cleaned = sanitizeFormRows(rowsRaw, homeTeam, awayTeam, league).sort((a, b) =>
     (b.date || '').localeCompare(a.date || '')
   );
-  const withScore = cleaned.filter((r) => r.score).slice(0, 14);
+  const withScore = cleaned.filter((r) => r.score).slice(0, RECENT_MATCHES_MAX * 2);
 
   const leagueBoost = (row: FormMatchRow) => {
     if (!league || !row.league) return 0;
@@ -379,7 +379,7 @@ async function loadTeamForm(
       if (parts.length !== 2) return false;
       return matchInvolvesTeam(homeTeam, parts[0].trim(), parts[1].trim());
     })
-  ).slice(0, 12);
+  ).slice(0, RECENT_MATCHES_MAX);
 
   const awayScored = sortForm(
     cleaned.filter((r) => {
@@ -388,7 +388,7 @@ async function loadTeamForm(
       if (parts.length !== 2) return false;
       return matchInvolvesTeam(awayTeam, parts[0].trim(), parts[1].trim());
     })
-  ).slice(0, 12);
+  ).slice(0, RECENT_MATCHES_MAX);
 
   if (withScore.length === 0 && h2hScored.length === 0) {
     return emptyForm(
@@ -423,20 +423,20 @@ async function loadTeamForm(
   }
 
   const homeForm = summarizeTeamForm(homeScored, homeTeam, {
-    maxRows: 8,
+    maxRows: RECENT_MATCHES_MAX,
     leagueHint: league,
     excludeOpponent: awayTeam,
   });
   const awayForm = summarizeTeamForm(awayScored, awayTeam, {
-    maxRows: 8,
+    maxRows: RECENT_MATCHES_MAX,
     leagueHint: league,
     excludeOpponent: homeTeam,
   });
 
   return {
     available: true,
-    message: `Historial real: ${parts.join(', ')} (máx. muestra). Forma reciente pesa más que H2H.`,
-    recentScores: withScore.map((r) => r.score!).slice(0, 10),
+    message: `Historial real: ${parts.join(', ')} (objetivo ≥${RECENT_MATCHES_MIN} por equipo). Forma reciente pesa más que H2H.`,
+    recentScores: withScore.map((r) => r.score!).slice(0, RECENT_MATCHES_MAX * 2),
     avgGoalsFor: homeForm?.avgGoalsFor ?? null,
     avgGoalsAgainst: homeForm?.avgGoalsAgainst ?? null,
     avgGoalsTotal,

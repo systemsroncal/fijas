@@ -2,6 +2,7 @@
  * Resumen de análisis en español (seguro para cliente y servidor).
  */
 
+import { RECENT_MATCHES_MIN } from '@/lib/ai/form-stats';
 import type { AnalysisBrief, StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { formatReadablePick } from '@/lib/match-display';
 
@@ -96,16 +97,16 @@ export function buildAnalysisBrief(payload: StructuredMatchPayload): AnalysisBri
   const awayS = form?.awaySeason?.filter((r) => r.score) ?? [];
   if (homeS.length > 0 && m) {
     bullets.push(
-      `Forma temporada ${m.homeTeam}: ${homeS
-        .slice(0, 5)
+      `Forma temporada ${m.homeTeam} (${homeS.length} partidos): ${homeS
+        .slice(0, RECENT_MATCHES_MIN)
         .map((r) => r.score)
         .join(', ')}.`
     );
   }
   if (awayS.length > 0 && m) {
     bullets.push(
-      `Forma temporada ${m.awayTeam}: ${awayS
-        .slice(0, 5)
+      `Forma temporada ${m.awayTeam} (${awayS.length} partidos): ${awayS
+        .slice(0, RECENT_MATCHES_MIN)
         .map((r) => r.score)
         .join(', ')}.`
     );

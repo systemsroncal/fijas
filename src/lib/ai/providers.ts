@@ -57,7 +57,8 @@ export const AI_PROVIDERS: {
     helpSteps: [
       'Ve a https://build.nvidia.com/',
       'Genera una API key de NVIDIA NIM (Free Endpoint)',
-      'La app prueba en cascada: deepseek-v4-flash → Gemma → Nemotron → Mistral → Llama',
+      'Base URL: integrate.api.nvidia.com/v1 — cada modelo usa temp/top_p/max_tokens de build.nvidia.com',
+      'Cascada: deepseek-v4-flash → llama-3.1-8b → gemma → glm/kimi → nemotron…',
       'Copia y guarda la clave',
     ],
   },
@@ -107,6 +108,148 @@ type ProviderConfig = {
   extractText: (json: unknown) => string;
 };
 
+/**
+ * Cascada NVIDIA NIM Free Endpoint (misma API key).
+ * Parámetros por modelo según build.nvidia.com (OpenAI-compatible).
+ * Docs: https://build.nvidia.com / https://docs.api.nvidia.com/nim/reference/llm-apis
+ */
+export type NvidiaModelParams = {
+  temperature?: number;
+  top_p?: number;
+  max_tokens?: number;
+  seed?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  /** Nemotron y similares: min/max thinking tokens en el body JSON */
+  thinkingTokens?: { min: number; max: number };
+};
+
+const NVIDIA_DEFAULT_PARAMS: NvidiaModelParams = {
+  temperature: 0.3,
+  top_p: 0.9,
+  max_tokens: 2048,
+};
+
+/** Parámetros recomendados por modelo (build.nvidia.com). */
+export const NVIDIA_MODEL_PARAMS: Record<string, NvidiaModelParams> = {
+  'deepseek-ai/deepseek-v4-flash': { temperature: 0.3, top_p: 0.9, max_tokens: 4096 },
+  'deepseek-ai/deepseek-v4-pro': { temperature: 0.4, top_p: 0.9, max_tokens: 4096 },
+  'meta/llama-3.1-8b-instruct': { temperature: 0.2, top_p: 0.7, max_tokens: 1024 },
+  'meta/llama-3.1-70b-instruct': { temperature: 0.2, top_p: 0.7, max_tokens: 2048 },
+  'meta/llama-3.2-3b-instruct': { temperature: 0.2, top_p: 0.7, max_tokens: 1024 },
+  'meta/llama-3.3-70b-instruct': { temperature: 0.2, top_p: 0.7, max_tokens: 2048 },
+  'z-ai/glm-5.2': { temperature: 1, top_p: 1, max_tokens: 16384, seed: 42 },
+  'moonshotai/kimi-k2.6': { temperature: 1, top_p: 1, max_tokens: 16384, seed: 0 },
+  'thinkingmachines/inkling': { temperature: 1, top_p: 0.95, max_tokens: 8192 },
+  'nvidia/nvidia-nemotron-nano-9b-v2': {
+    temperature: 0.6,
+    top_p: 0.95,
+    max_tokens: 2048,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    thinkingTokens: { min: 1024, max: 2048 },
+  },
+  'nvidia/llama-3.1-nemotron-nano-8b-v1': {
+    temperature: 0.6,
+    top_p: 0.95,
+    max_tokens: 2048,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    thinkingTokens: { min: 512, max: 1024 },
+  },
+  'google/gemma-4-31b-it': { temperature: 0.4, top_p: 0.9, max_tokens: 4096 },
+  'google/gemma-3-27b-it': { temperature: 0.4, top_p: 0.9, max_tokens: 4096 },
+  'google/gemma-2-27b-it': { temperature: 0.4, top_p: 0.9, max_tokens: 4096 },
+  'google/gemma-2-9b-it': { temperature: 0.3, top_p: 0.9, max_tokens: 2048 },
+  'google/gemma-2-2b-it': { temperature: 0.3, top_p: 0.9, max_tokens: 1024 },
+  'mistralai/mistral-small-3.1-24b-instruct-2503': {
+    temperature: 0.3,
+    top_p: 0.9,
+    max_tokens: 4096,
+  },
+  'mistralai/mistral-medium-3.1-24b-instruct-2503': {
+    temperature: 0.3,
+    top_p: 0.9,
+    max_tokens: 4096,
+  },
+  'microsoft/phi-4-mini-instruct': { temperature: 0.2, top_p: 0.8, max_tokens: 2048 },
+};
+
+const NVIDIA_MODEL_FALLBACKS = [
+  'deepseek-ai/deepseek-v4-flash',
+  'meta/llama-3.1-8b-instruct',
+  'google/gemma-2-9b-it',
+  'z-ai/glm-5.2',
+  'moonshotai/kimi-k2.6',
+  'google/gemma-4-31b-it',
+  'google/gemma-3-27b-it',
+  'google/gemma-2-9b-it',
+  'nvidia/nvidia-nemotron-nano-9b-v2',
+  'nvidia/llama-3.1-nemotron-nano-8b-v1',
+  'mistralai/mistral-small-3.1-24b-instruct-2503',
+  'mistralai/mistral-medium-3.1-24b-instruct-2503',
+  'thinkingmachines/inkling',
+  'microsoft/phi-4-mini-instruct',
+  'deepseek-ai/deepseek-v4-pro',
+  'google/gemma-2-27b-it',
+  'meta/llama-3.3-70b-instruct',
+  'meta/llama-3.1-70b-instruct',
+  'meta/llama-3.2-3b-instruct',
+  'google/gemma-2-2b-it',
+] as const;
+
+/** Modelos rápidos para cascada / failover (sin thinking largo). */
+const NVIDIA_CASCADE_MODELS = [
+  'deepseek-ai/deepseek-v4-flash',
+  'meta/llama-3.1-8b-instruct',
+  'google/gemma-2-9b-it',
+] as const;
+
+export function buildNvidiaChatBody(
+  model: string,
+  messages: ChatMessage[],
+  opts?: { cascade?: boolean }
+): Record<string, unknown> {
+  const cascade = opts?.cascade ?? false;
+  const cfg = NVIDIA_MODEL_PARAMS[model] ?? NVIDIA_DEFAULT_PARAMS;
+  const maxTokens = cascade
+    ? Math.min(cfg.max_tokens ?? NVIDIA_DEFAULT_PARAMS.max_tokens!, 2048)
+    : (cfg.max_tokens ?? NVIDIA_DEFAULT_PARAMS.max_tokens);
+
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    stream: false,
+    temperature: cfg.temperature ?? NVIDIA_DEFAULT_PARAMS.temperature,
+    max_tokens: maxTokens,
+  };
+
+  if (cfg.top_p != null) body.top_p = cfg.top_p;
+  if (cfg.frequency_penalty != null) body.frequency_penalty = cfg.frequency_penalty;
+  if (cfg.presence_penalty != null) body.presence_penalty = cfg.presence_penalty;
+  if (cfg.seed != null && !cascade) body.seed = cfg.seed;
+
+  if (!cascade && cfg.thinkingTokens) {
+    body.min_thinking_tokens = cfg.thinkingTokens.min;
+    body.max_thinking_tokens = cfg.thinkingTokens.max;
+  }
+
+  return body;
+}
+
+function extractNvidiaText(json: unknown): string {
+  const data = json as {
+    choices?: {
+      message?: { content?: string | null; reasoning_content?: string | null };
+    }[];
+  };
+  const msg = data.choices?.[0]?.message;
+  const content = msg?.content?.trim();
+  if (content) return content;
+  const reasoning = msg?.reasoning_content?.trim();
+  return reasoning ?? '';
+}
+
 const OPENAI_COMPAT: Omit<ProviderConfig, 'url' | 'model'> = {
   buildHeaders: (apiKey) => ({
     Authorization: `Bearer ${apiKey}`,
@@ -150,14 +293,10 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
   NVIDIA: {
     ...OPENAI_COMPAT,
     url: 'https://integrate.api.nvidia.com/v1/chat/completions',
-    // Free Endpoint prioritario (NIM trial) — el resto se prueba en cascada
-    model: 'deepseek-ai/deepseek-v4-flash',
-    buildBody: (messages) => ({
-      model: 'deepseek-ai/deepseek-v4-flash',
-      messages,
-      temperature: 0.3,
-      max_tokens: 2048,
-    }),
+    model: NVIDIA_CASCADE_MODELS[0],
+    buildBody: (messages) =>
+      buildNvidiaChatBody(NVIDIA_CASCADE_MODELS[0], messages, { cascade: false }),
+    extractText: extractNvidiaText,
   },
   MISTRAL: {
     ...OPENAI_COMPAT,
@@ -229,33 +368,6 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
     },
   },
 };
-
-/**
- * Cascada NVIDIA NIM Free Endpoint (misma API key).
- * Orden: velocidad/fiabilidad free → calidad → Llama de respaldo.
- * Docs: https://build.nvidia.com / https://docs.api.nvidia.com/nim/reference/llm-apis
- */
-const NVIDIA_MODEL_FALLBACKS = [
-  // 1) Free Endpoint prioritarios (rápidos / útiles para análisis)
-  'deepseek-ai/deepseek-v4-flash',
-  'google/gemma-4-31b-it',
-  'google/gemma-3-27b-it',
-  'google/gemma-2-9b-it',
-  'nvidia/nvidia-nemotron-nano-9b-v2',
-  'nvidia/llama-3.1-nemotron-nano-8b-v1',
-  'mistralai/mistral-small-3.1-24b-instruct-2503',
-  'mistralai/mistral-medium-3.1-24b-instruct-2503',
-  'microsoft/phi-4-mini-instruct',
-  // 2) Free más pesados (pueden ir lentos / DEGRADED)
-  'deepseek-ai/deepseek-v4-pro',
-  'google/gemma-2-27b-it',
-  'meta/llama-3.3-70b-instruct',
-  // 3) Respaldo histórico NIM
-  'meta/llama-3.1-70b-instruct',
-  'meta/llama-3.2-3b-instruct',
-  'google/gemma-2-2b-it',
-  'meta/llama-3.1-8b-instruct',
-] as const;
 
 function isNvidiaRetryableError(status: number, body: string, message: string): boolean {
   if (isNvidiaDegradedError(status, body)) return true;
@@ -386,20 +498,13 @@ export async function callProvider(
 
   if (provider === 'NVIDIA') {
     let lastErr: Error | null = null;
-    const models = cascade
-      ? NVIDIA_MODEL_FALLBACKS.slice(0, 3)
-      : NVIDIA_MODEL_FALLBACKS;
+    const models = cascade ? NVIDIA_CASCADE_MODELS : NVIDIA_MODEL_FALLBACKS;
     for (const model of models) {
       try {
         return await callOpenAiCompatOnce(
           config.url,
           config.buildHeaders(apiKey),
-          {
-            model,
-            messages,
-            temperature: 0.3,
-            max_tokens: 2048,
-          },
+          buildNvidiaChatBody(model, messages, { cascade }),
           provider,
           config.extractText,
           timeoutMs

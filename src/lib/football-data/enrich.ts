@@ -2,7 +2,7 @@
  * Enrich de análisis con football-data.org (standings + forma + marcador).
  */
 
-import { summarizeTeamForm } from '@/lib/ai/form-stats';
+import { RECENT_MATCHES_MAX, summarizeTeamForm } from '@/lib/ai/form-stats';
 import type { FormMatchRow, StructuredMatchPayload, TeamFormBlock } from '@/lib/ai/analysis-types';
 import {
   findMatchContext,
@@ -79,13 +79,13 @@ export async function applyFootballDataToPayload(
       match.homeTeam,
       match.awayTeam,
       match.league
-    ).slice(0, 10);
+    ).slice(0, RECENT_MATCHES_MAX);
     const mergedAway = sanitizeFormRows(
       [...(formBase.awaySeason ?? []), ...awaySeason],
       match.homeTeam,
       match.awayTeam,
       match.league
-    ).slice(0, 10);
+    ).slice(0, RECENT_MATCHES_MAX);
     const extraScores = sanitizeFormRows(
       [...homeSeason, ...awaySeason, ...(formBase.rows ?? [])],
       match.homeTeam,
@@ -94,7 +94,7 @@ export async function applyFootballDataToPayload(
     )
       .map((r) => r.score!)
       .filter(Boolean)
-      .slice(0, 8);
+      .slice(0, RECENT_MATCHES_MAX * 2);
 
     const standingBits = [
       standingLine(ctx.standingsHome, match.homeTeam),
@@ -112,19 +112,19 @@ export async function applyFootballDataToPayload(
         match.homeTeam,
         match.awayTeam,
         match.league
-      ).slice(0, 12),
+      ).slice(0, RECENT_MATCHES_MAX * 2),
       homeSeason: mergedHome,
       awaySeason: mergedAway,
       homeForm: mergedHome.length
         ? summarizeTeamForm(mergedHome, match.homeTeam, {
-            maxRows: 8,
+            maxRows: RECENT_MATCHES_MAX,
             leagueHint: match.league,
             excludeOpponent: match.awayTeam,
           })
         : formBase.homeForm ?? null,
       awayForm: mergedAway.length
         ? summarizeTeamForm(mergedAway, match.awayTeam, {
-            maxRows: 8,
+            maxRows: RECENT_MATCHES_MAX,
             leagueHint: match.league,
             excludeOpponent: match.homeTeam,
           })

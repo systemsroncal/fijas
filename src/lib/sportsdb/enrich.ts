@@ -4,7 +4,7 @@
  * Docs: https://www.thesportsdb.com/documentation
  */
 
-import { summarizeTeamForm } from '@/lib/ai/form-stats';
+import { RECENT_MATCHES_MAX, summarizeTeamForm } from '@/lib/ai/form-stats';
 import type {
   FormMatchRow,
   StructuredMatchPayload,
@@ -27,6 +27,7 @@ import {
   detectTeamCategory,
   isImplausibleSeniorScore,
   isOutlierFootballScore,
+  matchInvolvesTeam,
   sanitizeFormRows,
 } from '@/lib/team-identity';
 
@@ -81,12 +82,40 @@ function mapLastEvents(
       if (isImplausibleSeniorScore(score)) return false;
       return true;
     })
-    .slice(0, 5)
+    .slice(0, RECENT_MATCHES_MAX)
     .map((ev) => ({
       label: ev.strEvent ?? `${ev.strHomeTeam ?? '?'} vs ${ev.strAwayTeam ?? '?'}`,
       score: eventScore(ev),
       date: ev.dateEvent,
     }));
+}
+
+function recentToFormRows(
+  recent: ReturnType<typeof mapLastEvents>,
+  prefix: string,
+  fallbackDate: string
+): FormMatchRow[] {
+  return recent
+    .filter((r) => r.score)
+    .map((r, i) => ({
+      matchId: `${prefix}-${i}-${r.date ?? i}`,
+      label: r.label,
+      date: r.date ?? fallbackDate,
+      score: r.score,
+      tip: null,
+    }));
+}
+
+function sortFormRowsDesc(rows: FormMatchRow[]): FormMatchRow[] {
+  return [...rows].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+function filterRowsForTeam(rows: FormMatchRow[], team: string): FormMatchRow[] {
+  return rows.filter((r) => {
+    const parts = r.label.split(/\s+vs\.?\s+/i);
+    if (parts.length !== 2) return false;
+    return matchInvolvesTeam(team, parts[0].trim(), parts[1].trim());
+  });
 }
 
 function fallbackForm(): TeamFormBlock {
@@ -219,30 +248,33 @@ export async function enrichMatchFromSportsDb(input: {
       Math.round((totals.reduce((x, y) => x + y, 0) / totals.length) * 100) / 100;
   }
 
-  const rows: FormMatchRow[] = sanitizeFormRows(
-    [...homeRecent, ...awayRecent]
-      .filter((r) => r.score)
-      .map((r, i) => ({
-        matchId: `sportsdb-${i}-${r.date ?? i}`,
-        label: r.label,
-        date: r.date ?? date,
-        score: r.score,
-        tip: null,
-      })),
+  const homeRows = sanitizeFormRows(
+    recentToFormRows(homeRecent, 'sportsdb-home', date),
     input.homeTeam,
     input.awayTeam,
     input.league
-  ).slice(0, 10);
+  );
+  const awayRows = sanitizeFormRows(
+    recentToFormRows(awayRecent, 'sportsdb-away', date),
+    input.homeTeam,
+    input.awayTeam,
+    input.league
+  );
+  const rows = sortFormRowsDesc(
+    sanitizeFormRows([...homeRows, ...awayRows], input.homeTeam, input.awayTeam, input.league)
+  ).slice(0, RECENT_MATCHES_MAX * 2);
 
   const formPatch: Partial<TeamFormBlock> =
-    rows.length > 0
+    homeRows.length > 0 || awayRows.length > 0
       ? {
           available: true,
-          message: `Forma reciente TheSportsDB (${rows.length} marcadores reales). Combinado con tips scrapeados.`,
+          message: `Forma reciente TheSportsDB (${scoredHome.length} local, ${scoredAway.length} visitante). Combinado con tips scrapeados.`,
           recentScores: rows.map((r) => r.score!).filter(Boolean),
           avgGoalsTotal,
           sampleSize: rows.length,
           rows,
+          homeSeason: homeRows.slice(0, RECENT_MATCHES_MAX),
+          awaySeason: awayRows.slice(0, RECENT_MATCHES_MAX),
         }
       : {
           available: false,
@@ -298,14 +330,23 @@ export function mergeFormWithSportsDb(
     };
   }
 
-  const mergedRows = sanitizeFormRows(
-    [...(patch.rows ?? []), ...(base.rows ?? [])],
-    ctx?.homeTeam ?? '',
-    ctx?.awayTeam ?? '',
-    ctx?.league
-  ).slice(0, 12);
+  const mergedRows = sortFormRowsDesc(
+    sanitizeFormRows(
+      [
+        ...(patch.homeSeason ?? []),
+        ...(patch.awaySeason ?? []),
+        ...(base.homeSeason ?? []),
+        ...(base.awaySeason ?? []),
+        ...(patch.rows ?? []),
+        ...(base.rows ?? []),
+      ],
+      ctx?.homeTeam ?? '',
+      ctx?.awayTeam ?? '',
+      ctx?.league
+    )
+  ).slice(0, RECENT_MATCHES_MAX * 2);
 
-  const recentScores = mergedRows.map((r) => r.score!).filter(Boolean).slice(0, 12);
+  const recentScores = mergedRows.map((r) => r.score!).filter(Boolean).slice(0, RECENT_MATCHES_MAX * 2);
 
   const h2h =
     ctx?.homeTeam && ctx?.awayTeam
@@ -314,28 +355,36 @@ export function mergeFormWithSportsDb(
           ctx.homeTeam,
           ctx.awayTeam,
           ctx.league
-        ).slice(0, 8)
-      : [...(base.h2h ?? []), ...(patch.h2h ?? [])].slice(0, 8);
+        ).slice(0, 10)
+      : [...(base.h2h ?? []), ...(patch.h2h ?? [])].slice(0, 10);
+
+  const mergeTeamSeason = (team: string, baseRows: FormMatchRow[], patchRows: FormMatchRow[]) =>
+    sortFormRowsDesc(
+      sanitizeFormRows(
+        [...(patchRows ?? []), ...(baseRows ?? [])],
+        ctx?.homeTeam ?? '',
+        ctx?.awayTeam ?? '',
+        ctx?.league
+      )
+    )
+      .filter((row) => filterRowsForTeam([row], team).length > 0)
+      .slice(0, RECENT_MATCHES_MAX);
 
   const homeSeason =
     ctx?.homeTeam && ctx?.awayTeam
-      ? sanitizeFormRows(
-          [...(base.homeSeason ?? []), ...(patch.homeSeason ?? [])],
-          ctx.homeTeam,
-          ctx.awayTeam,
-          ctx.league
-        ).slice(0, 8)
-      : [...(base.homeSeason ?? []), ...(patch.homeSeason ?? [])].slice(0, 8);
+      ? mergeTeamSeason(ctx.homeTeam, base.homeSeason ?? [], patch.homeSeason ?? [])
+      : sortFormRowsDesc([...(base.homeSeason ?? []), ...(patch.homeSeason ?? [])]).slice(
+          0,
+          RECENT_MATCHES_MAX
+        );
 
   const awaySeason =
     ctx?.homeTeam && ctx?.awayTeam
-      ? sanitizeFormRows(
-          [...(base.awaySeason ?? []), ...(patch.awaySeason ?? [])],
-          ctx.homeTeam,
-          ctx.awayTeam,
-          ctx.league
-        ).slice(0, 8)
-      : [...(base.awaySeason ?? []), ...(patch.awaySeason ?? [])].slice(0, 8);
+      ? mergeTeamSeason(ctx.awayTeam, base.awaySeason ?? [], patch.awaySeason ?? [])
+      : sortFormRowsDesc([...(base.awaySeason ?? []), ...(patch.awaySeason ?? [])]).slice(
+          0,
+          RECENT_MATCHES_MAX
+        );
 
   return {
     ...base,
@@ -354,7 +403,7 @@ export function mergeFormWithSportsDb(
     homeForm:
       ctx?.homeTeam && homeSeason.length
         ? summarizeTeamForm(homeSeason, ctx.homeTeam, {
-            maxRows: 8,
+            maxRows: RECENT_MATCHES_MAX,
             leagueHint: ctx.league,
             excludeOpponent: ctx.awayTeam,
           })
@@ -362,7 +411,7 @@ export function mergeFormWithSportsDb(
     awayForm:
       ctx?.awayTeam && awaySeason.length
         ? summarizeTeamForm(awaySeason, ctx.awayTeam, {
-            maxRows: 8,
+            maxRows: RECENT_MATCHES_MAX,
             leagueHint: ctx.league,
             excludeOpponent: ctx.homeTeam,
           })

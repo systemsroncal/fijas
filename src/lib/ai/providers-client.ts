@@ -53,7 +53,8 @@ export const AI_HELP: Record<string, string[]> = {
   NVIDIA: [
     'Ve a https://build.nvidia.com/',
     'Genera una API key de NVIDIA NIM (Free Endpoint)',
-    'La app prueba en cascada: deepseek-v4-flash → Gemma → Nemotron → Mistral → Llama',
+    'Cada modelo NIM usa sus parámetros (temp, top_p, max_tokens) según build.nvidia.com',
+    'Cascada: deepseek-v4-flash → llama-3.1-8b → gemma → glm/kimi → nemotron…',
     'Copia y guarda la clave',
   ],
   CLAUDE: [

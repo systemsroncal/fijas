@@ -41,6 +41,7 @@ import MatchPredictionPanel from '@/components/analysis/MatchPredictionPanel';
 import { proxiedMediaUrl } from '@/lib/media-proxy';
 import { exportNodeToPng } from '@/lib/export-png';
 import { translateAnalysisMode, translateVerdict } from '@/lib/ai/labels-es';
+import { RECENT_MATCHES_MAX, RECENT_MATCHES_MIN } from '@/lib/ai/form-stats';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -187,6 +188,33 @@ export default function MatchAnalysisDashboard({
       .sort((a, b) => b.aiProb - a.aiProb || b.edge - a.edge)
       .slice(0, 20);
   }, [valid, payload.markets]);
+
+  const formDisplayRows = useMemo(() => {
+    const home = payload.form?.homeSeason?.filter((r) => r.score) ?? [];
+    const away = payload.form?.awaySeason?.filter((r) => r.score) ?? [];
+    const combined = [...home, ...away];
+    if (combined.length > 0) {
+      const seen = new Set<string>();
+      return combined
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        .filter((r) => {
+          const key = `${r.date}|${r.label}|${r.score}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, RECENT_MATCHES_MAX * 2);
+    }
+    return (payload.form?.rows ?? []).filter((r) => r.score).slice(0, RECENT_MATCHES_MAX * 2);
+  }, [payload.form?.awaySeason, payload.form?.homeSeason, payload.form?.rows]);
+
+  const formSampleCounts = useMemo(
+    () => ({
+      home: payload.form?.homeSeason?.filter((r) => r.score).length ?? 0,
+      away: payload.form?.awaySeason?.filter((r) => r.score).length ?? 0,
+    }),
+    [payload.form?.awaySeason, payload.form?.homeSeason]
+  );
 
   const donutOptions = useMemo(
     () => ({
@@ -852,10 +880,19 @@ export default function MatchAnalysisDashboard({
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block" mb={1}>
               Misma categoría del partido analizado (sin mezclar femenino/juvenil). Alias de club
-              deduplicados (p. ej. Astana ≈ FC Astana).
+              deduplicados (p. ej. Astana ≈ FC Astana). Objetivo: al menos {RECENT_MATCHES_MIN}{' '}
+              partidos recientes por equipo (hasta {RECENT_MATCHES_MAX}).
             </Typography>
-            {payload.form?.available && payload.form.recentScores.length > 0 ? (
+            {payload.form?.available && formDisplayRows.length > 0 ? (
               <Stack spacing={1}>
+                {(formSampleCounts.home < RECENT_MATCHES_MIN ||
+                  formSampleCounts.away < RECENT_MATCHES_MIN) && (
+                  <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+                    Muestra limitada: {m?.homeTeam ?? 'Local'} {formSampleCounts.home} ·{' '}
+                    {m?.awayTeam ?? 'Visitante'} {formSampleCounts.away} (objetivo ≥
+                    {RECENT_MATCHES_MIN} c/u). Se usa todo lo disponible en scrape + APIs.
+                  </Alert>
+                )}
                 <Stack direction="row" flexWrap="wrap" gap={0.75}>
                   {payload.form.recentScores.map((s, i) => (
                     <Chip key={`${s}-${i}`} label={s} size="small" variant="outlined" />
@@ -878,7 +915,7 @@ export default function MatchAnalysisDashboard({
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {payload.form.rows.slice(0, 10).map((r) => (
+                    {formDisplayRows.map((r) => (
                       <TableRow key={r.matchId} hover>
                         <TableCell>{r.date}</TableCell>
                         <TableCell>{r.label}</TableCell>
