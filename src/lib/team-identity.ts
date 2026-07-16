@@ -184,14 +184,77 @@ function pairKey(home: string, away: string): string {
   return [x, y].sort().join('|');
 }
 
+function mergeDisplayName(a: string, b: string): string {
+  if (sameTeamIdentity(a, b)) {
+    return a.trim().length >= b.trim().length ? a.trim() : b.trim();
+  }
+  return a.trim();
+}
+
+function canonicalLabel(home: string, away: string): string {
+  return `${home} vs ${away}`;
+}
+
+/** Elige la fila más fiable cuando hay duplicados alias/fecha. */
+function pickBetterDuplicate(
+  kept: FormMatchRow,
+  candidate: FormMatchRow,
+  allRows: FormMatchRow[],
+  windowDays: number
+): FormMatchRow {
+  const kt = parseLabelTeams(kept.label)!;
+  const ct = parseLabelTeams(candidate.label)!;
+  const key = pairKey(kt.home, kt.away);
+
+  const home = mergeDisplayName(kt.home, ct.home);
+  const away = mergeDisplayName(kt.away, ct.away);
+
+  const scoreVotes = (score: string | null | undefined) => {
+    if (!score) return 0;
+    return allRows.filter((r) => {
+      const t = parseLabelTeams(r.label);
+      if (!t || !r.score) return false;
+      if (pairKey(t.home, t.away) !== key) return false;
+      if (r.score !== score) return false;
+      return (
+        dateDistanceDays(r.date || '', kept.date || '') <= windowDays ||
+        dateDistanceDays(r.date || '', candidate.date || '') <= windowDays
+      );
+    }).length;
+  };
+
+  let winner = kept;
+  if (kept.score && candidate.score && kept.score !== candidate.score) {
+    const keptVotes = scoreVotes(kept.score);
+    const candVotes = scoreVotes(candidate.score);
+    if (candVotes > keptVotes) winner = candidate;
+    else if (candVotes < keptVotes) winner = kept;
+    else {
+      // Empate: fecha más temprana (evita scrape +1 día con marcador inventado)
+      winner = (candidate.date || '') < (kept.date || '') ? candidate : kept;
+    }
+  } else if ((candidate.date || '') < (kept.date || '')) {
+    winner = candidate;
+  } else if ((candidate.date || '') > (kept.date || '')) {
+    winner = kept;
+  } else if (rowQuality(candidate) > rowQuality(kept)) {
+    winner = candidate;
+  }
+
+  return {
+    ...winner,
+    label: canonicalLabel(home, away),
+    date: winner.date,
+    score: winner.score,
+  };
+}
+
 function rowQuality(row: FormMatchRow): number {
   let q = 0;
-  q += (row.label?.length ?? 0) * 0.1;
   if (row.score && !isOutlierFootballScore(row.score)) q += 20;
   if (row.score && isOutlierFootballScore(row.score)) q -= 40;
   if (row.tip) q += 2;
-  // Prefiere nombres con prefijo de club (más específicos) sin ser basura
-  if (/\b(fc|cf|afc)\b/i.test(row.label)) q += 3;
+  if (/\b(fc|cf|afc)\b/i.test(row.label)) q += 1;
   return q;
 }
 
@@ -252,13 +315,11 @@ export function dedupeFormRows(
       continue;
     }
 
-    // Mismo fixture cercano: quedarse con el mejor
-    if (rowQuality(row) > rowQuality(kept[dupIdx])) {
-      kept[dupIdx] = row;
-    }
+    // Mismo fixture cercano: quedarse con el más fiable (fecha/marcador/consenso)
+    kept[dupIdx] = pickBetterDuplicate(kept[dupIdx], row, sorted, windowDays);
   }
 
-  return kept;
+  return kept.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
 /** Pipeline completo para historial de análisis. */

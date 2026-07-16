@@ -221,6 +221,12 @@ export function buildModelPayload(
   const scores = topScorelines(probs.lambdaHome, probs.lambdaAway, 4);
   const expectedRaw = expectedCornersCards(probs);
   const form = extras?.form ?? emptyForm();
+  const finishedScore =
+    ctx.livePhase === 'finished' &&
+    ctx.liveHomeScore != null &&
+    ctx.liveAwayScore != null
+      ? `${ctx.liveHomeScore}-${ctx.liveAwayScore}`
+      : null;
 
   const byQuality = (a: MarketEdge, b: MarketEdge) =>
     marketPriority(a.market) - marketPriority(b.market) ||
@@ -334,6 +340,7 @@ export function buildModelPayload(
       league: ctx.league,
       tip: ctx.tip ?? null,
       sport,
+      matchDate: ctx.matchDateYmd ?? null,
       homeCrestUrl: null,
       awayCrestUrl: null,
     },
@@ -343,9 +350,11 @@ export function buildModelPayload(
       away: pct(probs.away),
     },
     scoreline: {
-      mostLikely: `${scores[0].home}-${scores[0].away}`,
-      alternatives: scores.slice(1).map((s) => `${s.home}-${s.away}`),
-      source: 'model',
+      mostLikely: finishedScore ?? `${scores[0].home}-${scores[0].away}`,
+      alternatives: finishedScore
+        ? []
+        : scores.slice(1).map((s) => `${s.home}-${s.away}`),
+      source: finishedScore ? 'live' : 'model',
     },
     expected: {
       xgHome: expectedRaw.xgHome,

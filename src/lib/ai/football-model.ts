@@ -18,6 +18,8 @@ export type MatchContext = {
   liveAwayScore?: number | null;
   livePhase?: 'scheduled' | 'live' | 'finished' | 'unknown' | null;
   liveMinute?: number | null;
+  /** Fecha del partido analizado (YYYY-MM-DD) */
+  matchDateYmd?: string | null;
   /** Perfil arbitral para proxies de tarjetas/faltas */
   refereeStyle?: 'strict' | 'lenient' | 'balanced' | 'unknown';
   /** Multiplicador de goles por bajas (1 = sin impacto) */

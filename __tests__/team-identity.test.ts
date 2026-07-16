@@ -51,6 +51,8 @@ describe('team-identity', () => {
     ];
     const out = dedupeFormRows(rows, { dateWindowDays: 2 });
     expect(out).toHaveLength(1);
+    expect(out[0].score).toBe('3-2');
+    expect(out[0].date).toBe('2026-07-12');
     expect(out[0].label).toContain('FC Astana');
   });
 

@@ -149,6 +149,8 @@ function toCtx(m: {
   awayTeam: string;
   league: string;
   kickoff?: string | null;
+  matchDate?: Date | null;
+  phase?: string | null;
   predictions?: Array<{
     betChoice?: string | null;
     oddsHome?: Prisma.Decimal | null;
@@ -166,6 +168,20 @@ function toCtx(m: {
     league: m.league,
   });
   const p = m.predictions?.[0];
+  const matchDateYmd = m.matchDate ? localDateISO(new Date(m.matchDate)) : null;
+  const note = m.predictions?.map((x) => x.statsNote).filter(Boolean).join(' ') ?? '';
+  const dbScore =
+    extractScoreFromText(note) ?? extractScoreFromText(fixed.kickoff ?? m.kickoff);
+  const finished = m.phase === 'finished';
+  let liveHomeScore: number | null = null;
+  let liveAwayScore: number | null = null;
+  if (dbScore && finished) {
+    const [h, a] = dbScore.split('-').map(Number);
+    if (!Number.isNaN(h) && !Number.isNaN(a)) {
+      liveHomeScore = h;
+      liveAwayScore = a;
+    }
+  }
   return {
     id: m.id,
     homeTeam: fixed.homeTeam,
@@ -177,7 +193,15 @@ function toCtx(m: {
     oddsAway: p?.oddsAway != null ? Number(p.oddsAway) : null,
     oddsOver: p?.oddsOver != null ? Number(p.oddsOver) : null,
     oddsUnder: p?.oddsUnder != null ? Number(p.oddsUnder) : null,
+    matchDateYmd,
+    livePhase: finished ? 'finished' : null,
+    liveHomeScore,
+    liveAwayScore,
   };
+}
+
+function matchYmdFromDate(d: Date | null | undefined): string {
+  return d ? localDateISO(new Date(d)) : localDateISO();
 }
 
 function scoresFromPayload(payload: StructuredMatchPayload) {
@@ -246,7 +270,9 @@ async function loadTeamForm(
     }
   }
 
-  const cleaned = sanitizeFormRows(rowsRaw, homeTeam, awayTeam, league);
+  const cleaned = sanitizeFormRows(rowsRaw, homeTeam, awayTeam, league).sort((a, b) =>
+    (b.date || '').localeCompare(a.date || '')
+  );
   const withScore = cleaned.filter((r) => r.score).slice(0, 10);
 
   const h2hScored = cleaned
@@ -411,6 +437,7 @@ export async function POST(request: Request) {
       });
       let ctx = toCtx(matchForAi);
       let matchDiagnostics: ReturnType<typeof buildMatchDiagnostics> | null = null;
+      const analysisDateYmd = matchYmdFromDate(match.matchDate);
       // Live/FT con stats (tope 18s: no bloquear la IA si SportsDB va lento)
       emit({
         type: 'progress',
@@ -424,7 +451,7 @@ export async function POST(request: Request) {
           fetchMatchStatus({
             homeTeam: ctx.homeTeam,
             awayTeam: ctx.awayTeam,
-            matchDateYmd: localDateISO(),
+            matchDateYmd: analysisDateYmd,
             scrapeIsLive: Boolean(match.isLive),
             includeDetails: true,
             bypassCache: false,
@@ -487,7 +514,7 @@ export async function POST(request: Request) {
       };
       // TheSportsDB solo en análisis (no en scrapers): forma/calendario profundos
       payload = await applySportsDbToPayload(payload, {
-        matchDateYmd: localDateISO(),
+        matchDateYmd: analysisDateYmd,
         fetchBadges: true,
       });
       emit({

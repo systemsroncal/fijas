@@ -131,6 +131,8 @@ export type StructuredMatchPayload = {
     sport?: string;
     homeCrestUrl?: string | null;
     awayCrestUrl?: string | null;
+    /** Fecha programada del partido (YYYY-MM-DD) */
+    matchDate?: string | null;
   };
   /** Meta de combinada (cuando mode = ACCUMULATOR) */
   accumulatorMeta?: {
@@ -156,7 +158,7 @@ export type StructuredMatchPayload = {
     }>;
   };
   probs: { home: number; draw: number; away: number };
-  scoreline: { mostLikely: string; alternatives: string[]; source: 'model' };
+  scoreline: { mostLikely: string; alternatives: string[]; source: 'model' | 'live' };
   expected: {
     xgHome: number | null;
     xgAway: number | null;

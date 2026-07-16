@@ -295,7 +295,7 @@ export default function MatchAnalysisDashboard({
           homeTeam={m?.homeTeam}
           awayTeam={m?.awayTeam}
           sport={m?.sport}
-          date={payload.sportsDb?.matchedEvent?.date}
+          date={payload.match?.matchDate ?? payload.sportsDb?.matchedEvent?.date}
         />
       </Box>
 
@@ -448,10 +448,15 @@ export default function MatchAnalysisDashboard({
                   ))}
                 </Stack>
                 <Typography mt={1.5} variant="body2" color="text.secondary">
-                  Marcador modelo más probable: <strong>{payload.scoreline.mostLikely}</strong>
+                  Marcador {payload.scoreline.source === 'live' ? 'final' : 'modelo más probable'}:{' '}
+                  <strong>{payload.scoreline.mostLikely}</strong>
                   {payload.scoreline.alternatives.length > 0 &&
                     ` · Alt: ${payload.scoreline.alternatives.join(', ')}`}
-                  <Chip size="small" label="modelo" sx={{ ml: 1 }} />
+                  <Chip
+                    size="small"
+                    label={payload.scoreline.source === 'live' ? 'FT' : 'modelo'}
+                    sx={{ ml: 1 }}
+                  />
                 </Typography>
               </Box>
             </Stack>

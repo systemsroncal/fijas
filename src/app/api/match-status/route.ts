@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
       homeTeam = fixed.homeTeam;
       awayTeam = fixed.awayTeam;
       storedKickoff = fixed.kickoff ?? match.kickoff;
-      matchDateYmd =
-        matchDateYmd ??
-        (match.matchDate ? localDateISO(new Date(match.matchDate)) : localDateISO());
+      matchDateYmd = match.matchDate
+        ? localDateISO(new Date(match.matchDate))
+        : matchDateYmd ?? localDateISO();
       scrapeIsLive = Boolean(match.isLive);
     }
 
