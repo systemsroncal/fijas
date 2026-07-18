@@ -3,7 +3,7 @@
  * Patrones inspirados en penaltyblog / market scanners (sin deps NBA).
  */
 
-import type { TeamRecentFormStats } from '@/lib/ai/analysis-types';
+import type { TeamRecentFormStats, TeamRollingStats, LiveMarketQuote } from '@/lib/ai/analysis-types';
 
 export type MatchContext = {
   homeTeam: string;
@@ -32,6 +32,12 @@ export type MatchContext = {
   formAway?: TeamRecentFormStats | null;
   /** Cantidad de H2H en muestra (peso bajo en λ) */
   h2hCount?: number;
+  /** Stats rolling reales (RapidAPI) — reemplaza proxies cuando existen */
+  teamStatsHome?: TeamRollingStats | null;
+  teamStatsAway?: TeamRollingStats | null;
+  /** Cuotas live agregadas (RapidAPI + scrape) */
+  liveOdds?: LiveMarketQuote[];
+  oddsSource?: 'scrape' | 'rapidapi' | 'mixed';
 };
 
 export type Implied1x2 = { home: number; draw: number; away: number };

@@ -306,3 +306,17 @@ model SystemLog {
   @@index([category, createdAt])
   @@map("system_logs")
 }
+
+/// Caché SWR para históricos RapidAPI / cuotas en tiempo real
+model ApiDataCache {
+  id        String   @id @default(cuid())
+  cacheKey  String   @unique
+  provider  String
+  payload   Json
+  fetchedAt DateTime @default(now())
+  staleAt   DateTime
+  expiresAt DateTime
+
+  @@index([provider, expiresAt])
+  @@map("api_data_cache")
+}

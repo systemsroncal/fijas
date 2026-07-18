@@ -4,14 +4,13 @@ import { AiProvider, AnalysisMode, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-guard';
 import { decryptSecret } from '@/lib/encryption';
+import { getAnalysisOrchestrator } from '@/lib/analysis/analysis-orchestrator';
+import { buildCascadeConfig, getLlmCascadeManager } from '@/lib/ai/llm-cascade-manager';
 import {
   buildAccumulatorStructuredPayload,
-  buildModelPayload,
   buildRandomScannerPayload,
   emptyForm,
-  enrichPayloadWithLlm,
-  refreshModelWithForm,
-  StructuredMatchPayload,
+  type StructuredMatchPayload,
 } from '@/lib/ai/structured-analysis';
 import { MatchContext } from '@/lib/ai/football-model';
 import {
@@ -44,7 +43,12 @@ export const maxDuration = 300;
 
 function attachSources(
   payload: StructuredMatchPayload,
-  extras?: { sportsDbOk?: boolean; formOk?: boolean; footballDataOk?: boolean }
+  extras?: {
+    sportsDbOk?: boolean;
+    formOk?: boolean;
+    footballDataOk?: boolean;
+    rapidApiOk?: boolean;
+  }
 ): StructuredMatchPayload {
   return {
     ...payload,
@@ -76,6 +80,13 @@ function attachSources(
           name: s.name,
           status: extras?.formOk ? 'ok' : 'skip',
           detail: extras?.formOk ? 'H2H/forma cargados' : 'Sin marcadores',
+        };
+      }
+      if (s.id === 'poisson') {
+        return {
+          name: s.name,
+          status: 'ok' as const,
+          detail: extras?.rapidApiOk ? 'Poisson + RapidAPI stats' : 'Poisson + BD',
         };
       }
       return { name: s.name, status: 'ok' as const, detail: 'Consultado / en cola' };
@@ -162,33 +173,28 @@ async function runPayloadEnrichment(
   providerUsed: AiProvider;
   promptUsed: string;
 }> {
-  const neuralOnly = body.provider === 'NEURAL';
-  const llmCascade = !neuralOnly && body.enrich !== false;
-
-  if (!neuralOnly && !llmCascade) {
-    return {
-      payload,
-      raw: JSON.stringify(payload),
-      providerUsed: body.provider as AiProvider,
-      promptUsed: 'deep-poisson+sportsdb',
-    };
-  }
+  const cascadeConfig = buildCascadeConfig({
+    provider: body.provider,
+    enrich: body.enrich,
+  });
 
   emit({
     type: 'progress',
     step: 'ai',
-    provider: neuralOnly ? 'NEURAL' : body.provider,
-    message: neuralOnly
-      ? 'Modo Red Neuronal (sin IA externa)…'
-      : `Probando IA preferida: ${body.provider}`,
+    provider: cascadeConfig.mode === 'ml_only' ? 'NEURAL' : body.provider,
+    message:
+      cascadeConfig.mode === 'ml_only'
+        ? 'Modo ML puro (sin LLM)…'
+        : `Cascada LLM: ${body.provider}`,
     pct: 68,
   });
 
-  const enriched = await enrichPayloadWithLlm(
-    neuralOnly ? 'NEURAL' : (body.provider as AiProvider),
+  const manager = getLlmCascadeManager();
+  const result = await manager.run({
+    config: cascadeConfig,
     keysByProvider,
     payload,
-    (ev) =>
+    onProgress: (ev) =>
       emit({
         type: 'progress',
         step: ev.step,
@@ -196,14 +202,14 @@ async function runPayloadEnrichment(
         provider: ev.provider,
         ok: ev.ok,
         pct: ev.pct,
-      })
-  );
+      }),
+  });
 
   return {
-    payload: enriched.payload,
-    raw: enriched.raw,
-    providerUsed: enriched.providerUsed,
-    promptUsed: enriched.promptUsed,
+    payload: result.payload,
+    raw: result.raw,
+    providerUsed: result.providerUsed,
+    promptUsed: result.promptUsed,
   };
 }
 
@@ -592,67 +598,59 @@ export async function POST(request: Request) {
       }
       emit({
         type: 'progress',
-        step: 'poisson',
-        message: 'Ejecutando Red Neuronal (Poisson)…',
-        pct: 52,
+        step: 'pipeline',
+        message: 'Orquestador: Poisson → APIs → cascada LLM…',
+        pct: 48,
       });
-      let payload = buildModelPayload(ctx, 'MATCH', { form });
+
       const cornerPair = cornersFromDiagnostics(matchDiagnostics);
-      payload = {
-        ...payload,
-        matchDiagnostics,
+      const pipeline = await getAnalysisOrchestrator().run({
+        ctx,
+        form,
+        mode: 'MATCH',
+        matchDateYmd: analysisDateYmd,
+        provider: body.provider,
+        enrich: body.enrich,
+        keysByProvider,
+        matchDiagnostics: matchDiagnostics ?? undefined,
+        onProgress: (e) =>
+          emit({
+            type: 'progress',
+            step: e.step,
+            message: e.message,
+            source: e.source,
+            ok: e.ok,
+            pct: e.pct,
+          }),
+      });
+
+      let payload = {
+        ...pipeline.payload,
         expected: {
-          ...payload.expected,
-          cornersHome: cornerPair.home ?? payload.expected.cornersHome,
-          cornersAway: cornerPair.away ?? payload.expected.cornersAway,
+          ...pipeline.payload.expected,
+          cornersHome: cornerPair.home ?? pipeline.payload.expected.cornersHome,
+          cornersAway: cornerPair.away ?? pipeline.payload.expected.cornersAway,
           note:
             matchDiagnostics?.teamStats.length
-              ? `${payload.expected.note} Stats live/FT incluidas para la IA.`
-              : payload.expected.note,
+              ? `${pipeline.payload.expected.note} Stats live/FT incluidas.`
+              : pipeline.payload.expected.note,
         },
-        llmUsed: false,
-        llmProvider: null,
       };
-      // TheSportsDB solo en análisis (no en scrapers): forma/calendario profundos
-      payload = await applySportsDbToPayload(payload, {
-        matchDateYmd: analysisDateYmd,
-        fetchBadges: true,
-      });
-      emit({
-        type: 'progress',
-        step: 'football_data',
-        source: 'football_data',
-        message: isFootballDataConfigured()
-          ? 'Consultando football-data.org (tabla/forma)…'
-          : 'football-data.org omitido (sin token)',
-        pct: 58,
-      });
-      payload = await applyFootballDataToPayload(payload);
-      if (payload.form?.available) {
-        payload = refreshModelWithForm(ctx, payload);
-      }
-      if (payload.footballData) {
-        emit({
-          type: 'progress',
-          step: 'football_data',
-          source: 'football_data',
-          message: `football-data.org · ${payload.footballData.notes.slice(0, 2).join(' · ') || 'OK'}`,
-          ok: Boolean(payload.footballData.matchId || payload.footballData.standingsHome),
-          pct: 62,
-        });
-      }
+
       payload = attachSources(payload, {
         sportsDbOk: Boolean(payload.sportsDb?.matchedEvent || matchDiagnostics),
         formOk: form.available,
         footballDataOk: Boolean(
           payload.footballData?.matchId || payload.footballData?.standingsHome
         ),
+        rapidApiOk: Boolean(
+          payload.rapidApi?.homeStats || (payload.rapidApi?.liveOddsCount ?? 0) > 0
+        ),
       });
-      const enrichedResult = await runPayloadEnrichment(body, payload, keysByProvider, emit);
-      payload = enrichedResult.payload;
-      const raw = enrichedResult.raw;
-      const providerUsed = enrichedResult.providerUsed;
-      const promptUsed = enrichedResult.promptUsed;
+
+      const raw = pipeline.raw;
+      const providerUsed = pipeline.providerUsed;
+      const promptUsed = pipeline.promptUsed;
 
       const scores = scoresFromPayload(payload);
       const analysis = await prisma.analysis.create({

@@ -2,6 +2,28 @@
  * Tipos compartidos del análisis estructurado (seguros para cliente).
  */
 
+export type TeamRollingStats = {
+  shotsOnTarget: number;
+  shotsTotal: number;
+  corners: number;
+  cards: number;
+  fouls: number;
+  offsides: number;
+  sampleSize: number;
+  source: 'rapidapi' | 'sportsdb' | 'database' | 'proxy';
+  fetchedAt?: string;
+};
+
+export type LiveMarketQuote = {
+  market: string;
+  line: string | null;
+  selection: string;
+  odds: number;
+  bookmaker: string;
+  fetchedAt: string;
+  source: 'rapidapi' | 'scrape' | 'implied';
+};
+
 export type AnalysisMarket = {
   market: string;
   line: string | null;
@@ -253,6 +275,13 @@ export type StructuredMatchPayload = {
     competition: string | null;
     standingsHome: { position: number; points: number; form: string | null } | null;
     standingsAway: { position: number; points: number; form: string | null } | null;
+    notes: string[];
+  };
+  /** Stats rolling + cuotas live RapidAPI */
+  rapidApi?: {
+    homeStats: TeamRollingStats | null;
+    awayStats: TeamRollingStats | null;
+    liveOddsCount: number;
     notes: string[];
   };
   /** Diagnósticos live/FT (equipo + jugadores desde TheSportsDB) */

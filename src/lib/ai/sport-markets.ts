@@ -55,21 +55,34 @@ export function scanSportSpecificEdges(
   const intensity = (probs.lambdaHome + probs.lambdaAway) / 2.5; // ~1 típico
 
   if (sport === 'football' || sport === 'other') {
-    // Proxies: más goles esperados → más remates/córners/faltas
-    // ctx.refereeStyle / absenceGoalMult (opcionales) ajustan disciplina y totales
+    const hs = ctx.teamStatsHome;
+    const as = ctx.teamStatsAway;
+    const hasReal = Boolean(hs?.source === 'rapidapi' || as?.source === 'rapidapi');
+
     const cardMult =
       ctx.refereeStyle === 'strict' ? 1.28 : ctx.refereeStyle === 'lenient' ? 0.78 : 1;
     const foulMult =
       ctx.refereeStyle === 'strict' ? 1.18 : ctx.refereeStyle === 'lenient' ? 0.88 : 1;
     const goalMult = ctx.absenceGoalMult ?? 1;
 
-    const shotsTotalMean = (22 + intensity * 6) * goalMult;
-    const shotsOnMean = (8 + intensity * 3) * goalMult;
-    const cornersMean = (9 + intensity * 2.5) * goalMult;
-    const cardsMean =
-      (3.8 + (1 - Math.abs(probs.home - probs.away)) * 1.2) * cardMult;
-    const foulsMean = (22 + intensity * 2) * foulMult;
-    const offsidesMean = 3.2 + intensity * 0.8;
+    const shotsTotalMean = hasReal && hs && as
+      ? (hs.shotsTotal + as.shotsTotal) / 2
+      : (22 + intensity * 6) * goalMult;
+    const shotsOnMean = hasReal && hs && as
+      ? (hs.shotsOnTarget + as.shotsOnTarget) / 2
+      : (8 + intensity * 3) * goalMult;
+    const cornersMean = hasReal && hs && as
+      ? hs.corners + as.corners
+      : (9 + intensity * 2.5) * goalMult;
+    const cardsMean = hasReal && hs && as
+      ? ((hs.cards + as.cards) / 2) * cardMult
+      : (3.8 + (1 - Math.abs(probs.home - probs.away)) * 1.2) * cardMult;
+    const foulsMean = hasReal && hs && as
+      ? ((hs.fouls + as.fouls) / 2) * foulMult
+      : (22 + intensity * 2) * foulMult;
+    const offsidesMean = hasReal && hs && as
+      ? (hs.offsides + as.offsides) / 2
+      : 3.2 + intensity * 0.8;
     const tacklesMean = 28 + intensity * 3;
     const savesMean = 5.5 + intensity * 1.5;
     const throwInsMean = 18 + intensity * 2;
