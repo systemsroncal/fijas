@@ -644,7 +644,10 @@ export async function POST(request: Request) {
           payload.footballData?.matchId || payload.footballData?.standingsHome
         ),
         rapidApiOk: Boolean(
-          payload.rapidApi?.homeStats || (payload.rapidApi?.liveOddsCount ?? 0) > 0
+          payload.rapidApi?.homeStats ||
+            (payload.rapidApi?.liveOddsCount ?? 0) > 0 ||
+            payload.rapidApi?.footballPrediction ||
+            (payload.rapidApi?.sportScore?.eventCount ?? 0) > 0
         ),
       });
 

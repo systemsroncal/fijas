@@ -277,11 +277,30 @@ export type StructuredMatchPayload = {
     standingsAway: { position: number; points: number; form: string | null } | null;
     notes: string[];
   };
-  /** Stats rolling + cuotas live RapidAPI */
+  /** Stats rolling + cuotas live + predicción RapidAPI */
   rapidApi?: {
     homeStats: TeamRollingStats | null;
     awayStats: TeamRollingStats | null;
     liveOddsCount: number;
+    footballPrediction?: {
+      prediction: string | null;
+      probHome: number | null;
+      probDraw: number | null;
+      probAway: number | null;
+      federation: string | null;
+    } | null;
+    sportScore?: {
+      eventCount: number;
+      primaryEvent: {
+        homeTeam: string;
+        awayTeam: string;
+        status: string | null;
+        score: string | null;
+        league: string | null;
+      } | null;
+      homeTeamProfile: { name: string; league: string | null } | null;
+      awayTeamProfile: { name: string; league: string | null } | null;
+    };
     notes: string[];
   };
   /** Diagnósticos live/FT (equipo + jugadores desde TheSportsDB) */

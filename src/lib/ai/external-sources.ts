@@ -20,7 +20,11 @@ export const ANALYSIS_EXTERNAL_SOURCES = [
   { id: 'h2h', name: 'H2H + forma temporada (BD)', cmd: 'query --h2h --season-form' },
   { id: 'football_data', name: 'football-data.org API', cmd: 'curl api.football-data.org/v4/matches -H X-Auth-Token' },
   { id: 'sportsdb', name: 'TheSportsDB (live/forma)', cmd: 'api thesportsdb.com' },
-  { id: 'rapidapi', name: 'RapidAPI (stats + odds live)', cmd: 'curl rapidapi.com API-Football + Odds' },
+  {
+    id: 'rapidapi',
+    name: 'RapidAPI (stats, odds, predicción, SportScore)',
+    cmd: 'curl sportscore1/events/search + sportscore6/widget/team + odds + API-Football',
+  },
   { id: 'poisson', name: 'Red Neuronal (Poisson)', cmd: './model --poisson --deep' },
 ] as const;
 

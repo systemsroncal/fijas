@@ -35,6 +35,8 @@ export async function applyRapidApiToPayload(
     relatedMatches: payload.relatedMatches,
   });
 
+  const primaryEvent = enriched.sportScore.events[0] ?? null;
+
   next = {
     ...next,
     form: payload.form ?? next.form,
@@ -43,6 +45,42 @@ export async function applyRapidApiToPayload(
       homeStats: enriched.homeStats,
       awayStats: enriched.awayStats,
       liveOddsCount: enriched.liveOdds.length,
+      footballPrediction: enriched.footballPrediction
+        ? {
+            prediction: enriched.footballPrediction.prediction,
+            probHome: enriched.footballPrediction.probHome,
+            probDraw: enriched.footballPrediction.probDraw,
+            probAway: enriched.footballPrediction.probAway,
+            federation: enriched.footballPrediction.federation,
+          }
+        : null,
+      sportScore: {
+        eventCount: enriched.sportScore.events.length,
+        primaryEvent: primaryEvent
+          ? {
+              homeTeam: primaryEvent.homeTeam,
+              awayTeam: primaryEvent.awayTeam,
+              status: primaryEvent.status,
+              score:
+                primaryEvent.scoreHome != null && primaryEvent.scoreAway != null
+                  ? `${primaryEvent.scoreHome}-${primaryEvent.scoreAway}`
+                  : null,
+              league: primaryEvent.league,
+            }
+          : null,
+        homeTeamProfile: enriched.sportScore.homeTeamProfile
+          ? {
+              name: enriched.sportScore.homeTeamProfile.name,
+              league: enriched.sportScore.homeTeamProfile.league,
+            }
+          : null,
+        awayTeamProfile: enriched.sportScore.awayTeamProfile
+          ? {
+              name: enriched.sportScore.awayTeamProfile.name,
+              league: enriched.sportScore.awayTeamProfile.league,
+            }
+          : null,
+      },
       notes: enriched.notes,
     },
   };

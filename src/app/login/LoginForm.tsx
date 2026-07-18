@@ -16,9 +16,10 @@ import {
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import CustomTextField from '@/app/(DashboardLayout)/components/forms/theme-elements/CustomTextField';
+import { APP_BRAND_TITLE } from '@/lib/brand';
 
 /**
- * Formulario de login (URL: /wps-admin/login).
+ * Formulario de login (URL: /login).
  */
 export default function LoginForm() {
   const router = useRouter();
@@ -51,7 +52,7 @@ export default function LoginForm() {
   };
 
   return (
-    <PageContainer title="Login" description="WPS Admin Login">
+    <PageContainer title="Login" description={`${APP_BRAND_TITLE} — inicio de sesión`}>
       <Box
         sx={{
           position: 'relative',
@@ -76,7 +77,7 @@ export default function LoginForm() {
           >
             <Card elevation={9} sx={{ p: 4, zIndex: 1, width: '100%', maxWidth: 500 }}>
               <Typography variant="h3" textAlign="center" mb={1} fontWeight={700}>
-                WPS Admin
+                {APP_BRAND_TITLE}
               </Typography>
               <Typography variant="subtitle1" textAlign="center" color="textSecondary" mb={3}>
                 Dashboard de apuestas deportivas

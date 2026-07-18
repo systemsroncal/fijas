@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
 import CustomTextField from '@/app/(DashboardLayout)/components/forms/theme-elements/CustomTextField';
+import { APP_BRAND_TITLE } from '@/lib/brand';
 
 /**
  * Registro de suscriptores.
@@ -56,7 +57,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <PageContainer title="Registro" description="Crear cuenta WPS Admin">
+    <PageContainer title="Registro" description={`Crear cuenta en ${APP_BRAND_TITLE}`}>
       <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Card elevation={9} sx={{ p: 4, width: '100%', maxWidth: 480 }}>
           <Typography variant="h4" mb={2} fontWeight={700}>

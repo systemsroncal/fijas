@@ -122,7 +122,12 @@ export class AnalysisOrchestrator {
         step: 'rapidapi',
         source: 'rapidapi',
         message: payload.rapidApi?.notes?.slice(0, 2).join(' · ') || 'RapidAPI OK',
-        ok: Boolean(payload.rapidApi?.homeStats || payload.rapidApi?.liveOddsCount),
+        ok: Boolean(
+          payload.rapidApi?.homeStats ||
+            payload.rapidApi?.liveOddsCount ||
+            payload.rapidApi?.footballPrediction ||
+            (payload.rapidApi?.sportScore?.eventCount ?? 0) > 0
+        ),
         pct: 68,
       });
     }

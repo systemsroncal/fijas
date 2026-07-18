@@ -54,7 +54,14 @@ export type LLMCascadeResult = {
 
 export type DataProviderId =
   | 'rapidapi_football'
+  | 'rapidapi_football_prediction'
   | 'rapidapi_odds'
+  | 'rapidapi_sportspage'
+  | 'rapidapi_livescore'
+  | 'rapidapi_therundown'
+  | 'rapidapi_nba'
+  | 'rapidapi_sportscore1'
+  | 'rapidapi_sportscore6'
   | 'thesportsdb'
   | 'football_data'
   | 'database_scrape';

@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import { LazyMotion, domAnimation, m, useReducedMotion } from 'framer-motion';
+import { APP_ANALYZE_CMD, APP_DEEP_SCAN_LABEL } from '@/lib/brand';
 import { sourcesForSport } from '@/lib/ai/external-sources';
 import type { AnalysisProgressEvent } from '@/lib/ai/analysis-types';
 import type { SportKind } from '@/lib/match-display';
@@ -137,7 +138,7 @@ export default function AnalysisProgressDialog({
     setLines([
       {
         id: 'boot',
-        text: `$ wps-analyze --provider ${provider} --deep --live`,
+        text: `$ ${APP_ANALYZE_CMD} --provider ${provider} --deep --live`,
         tone: 'cmd',
       },
       {
@@ -317,7 +318,7 @@ export default function AnalysisProgressDialog({
                     variant="overline"
                     sx={{ letterSpacing: 2, color: '#34D399', fontFamily: 'ui-monospace, monospace' }}
                   >
-                    WPS · DEEP SCAN
+                    {APP_DEEP_SCAN_LABEL}
                   </Typography>
                   <Typography
                     variant="h6"

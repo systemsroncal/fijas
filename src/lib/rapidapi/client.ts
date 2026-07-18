@@ -1,26 +1,27 @@
 /**
- * Cliente RapidAPI — API-Football (stats) + The Odds API (cuotas live).
- * Requiere RAPIDAPI_KEY en env. Sin key → degradación a BD/scrape.
+ * Cliente RapidAPI — stats, cuotas live y predicciones fútbol.
+ * Hosts: ver hosts.ts (Football Prediction, Odds, API-Football, etc.)
  */
 
 import type { LiveMarketQuote, TeamRollingStats } from '@/lib/analysis/contracts';
 import { CACHE_POLICIES } from '@/lib/analysis/contracts';
 import { getApiCacheStore } from '@/lib/cache/api-cache-store';
 import { getApiHealthMonitor } from '@/lib/health/api-health-monitor';
+import {
+  fetchFootballPredictionForMatch,
+  type FootballPredictionHit,
+} from '@/lib/rapidapi/football-prediction';
+import {
+  enrichMatchFromSportScore,
+  type SportScoreMatchEnrichment,
+} from '@/lib/rapidapi/sportscore';
+import { RAPIDAPI_HOSTS } from '@/lib/rapidapi/hosts';
+import { isRapidApiConfigured, rapidApiGet } from '@/lib/rapidapi/http';
 import crypto from 'crypto';
 
-const FOOTBALL_HOST =
-  process.env.RAPIDAPI_FOOTBALL_HOST?.trim() || 'api-football-v1.p.rapidapi.com';
-const ODDS_HOST = process.env.RAPIDAPI_ODDS_HOST?.trim() || 'odds.p.rapidapi.com';
-
-function rapidKey(): string | null {
-  const k = process.env.RAPIDAPI_KEY?.trim();
-  return k && k.length > 8 ? k : null;
-}
-
-export function isRapidApiConfigured(): boolean {
-  return Boolean(rapidKey());
-}
+export { isRapidApiConfigured } from '@/lib/rapidapi/http';
+export type { FootballPredictionHit, SportScoreMatchEnrichment };
+export type { SportScoreEventHit, SportScoreTeamHit } from '@/lib/rapidapi/sportscore';
 
 function teamCacheKey(name: string): string {
   const norm = name.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -43,41 +44,6 @@ type ApiFootballStat = {
   statistics?: Array<{ type?: string; value?: number | string | null }>;
 };
 
-async function rapidGet<T>(
-  host: string,
-  path: string,
-  providerId: 'rapidapi_football' | 'rapidapi_odds'
-): Promise<T> {
-  const key = rapidKey();
-  if (!key) throw new Error('RAPIDAPI_KEY no configurado');
-
-  const monitor = getApiHealthMonitor();
-  if (monitor.isCircuitOpen(providerId)) {
-    throw new Error(`${providerId}: circuit open`);
-  }
-
-  const start = Date.now();
-  const res = await fetch(`https://${host}${path}`, {
-    headers: {
-      'X-RapidAPI-Key': key,
-      'X-RapidAPI-Host': host,
-      Accept: 'application/json',
-    },
-    signal: AbortSignal.timeout(20_000),
-  });
-
-  const rate = monitor.parseRateLimitHeaders(res.headers);
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    monitor.recordFailure(providerId, `${res.status}: ${body.slice(0, 120)}`, Date.now() - start);
-    throw new Error(`RapidAPI ${providerId} ${res.status}`);
-  }
-
-  monitor.recordSuccess(providerId, Date.now() - start, rate);
-  return (await res.json()) as T;
-}
-
 function statValue(stats: ApiFootballStat['statistics'], type: string): number {
   const row = stats?.find((s) => (s.type ?? '').toLowerCase() === type.toLowerCase());
   const v = row?.value;
@@ -89,14 +55,24 @@ function statValue(stats: ApiFootballStat['statistics'], type: string): number {
   return 0;
 }
 
-function aggregateFixtureStats(fixtures: ApiFootballFixture[], teamName: string): TeamRollingStats | null {
-  const samples: Array<{ sot: number; shots: number; corners: number; cards: number; fouls: number; off: number }> =
-    [];
+function aggregateFixtureStats(
+  fixtures: ApiFootballFixture[],
+  teamName: string
+): TeamRollingStats | null {
+  const samples: Array<{
+    sot: number;
+    shots: number;
+    corners: number;
+    cards: number;
+    fouls: number;
+    off: number;
+  }> = [];
 
   for (const fx of fixtures) {
-    const isHome = fx.teams?.home?.name?.toLowerCase().includes(teamName.toLowerCase().slice(0, 6));
+    const isHome = fx.teams?.home?.name
+      ?.toLowerCase()
+      .includes(teamName.toLowerCase().slice(0, 6));
     const side = isHome ? 'home' : 'away';
-    // stats fetched separately in full impl — placeholder averages from goals intensity
     const gh = fx.goals?.home ?? 0;
     const ga = fx.goals?.away ?? 0;
     const gf = side === 'home' ? gh : ga;
@@ -139,28 +115,27 @@ function aggregateFixtureStats(fixtures: ApiFootballFixture[], teamName: string)
 }
 
 async function fetchTeamStatsRaw(teamName: string): Promise<TeamRollingStats | null> {
-  const search = await rapidGet<{ response?: Array<{ team?: { id?: number } }> }>(
-    FOOTBALL_HOST,
+  const search = await rapidApiGet<{ response?: Array<{ team?: { id?: number } }> }>(
+    RAPIDAPI_HOSTS.apiFootball,
     `/v3/teams?search=${encodeURIComponent(teamName.slice(0, 32))}`,
     'rapidapi_football'
   );
   const teamId = search.response?.[0]?.team?.id;
   if (!teamId) return null;
 
-  const fixtures = await rapidGet<{ response?: ApiFootballFixture[] }>(
-    FOOTBALL_HOST,
+  const fixtures = await rapidApiGet<{ response?: ApiFootballFixture[] }>(
+    RAPIDAPI_HOSTS.apiFootball,
     `/v3/fixtures?team=${teamId}&last=10&status=FT`,
     'rapidapi_football'
   );
   const list = fixtures.response ?? [];
   if (!list.length) return null;
 
-  // Intentar stats detalladas del último partido como calibración
   const lastId = list[0]?.fixture?.id;
   if (lastId) {
     try {
-      const detail = await rapidGet<{ response?: ApiFootballStat[] }>(
-        FOOTBALL_HOST,
+      const detail = await rapidApiGet<{ response?: ApiFootballStat[] }>(
+        RAPIDAPI_HOSTS.apiFootball,
         `/v3/fixtures/statistics?fixture=${lastId}`,
         'rapidapi_football'
       );
@@ -185,7 +160,7 @@ async function fetchTeamStatsRaw(teamName: string): Promise<TeamRollingStats | n
         }
       }
     } catch {
-      // continuar con agregado simple
+      // fallback agregado
     }
   }
 
@@ -209,7 +184,7 @@ export async function fetchTeamRollingStats(teamName: string): Promise<TeamRolli
       });
       return result.data;
     },
-    null as TeamRollingStats | null
+    null
   );
 }
 
@@ -225,17 +200,7 @@ type OddsApiEvent = {
   }>;
 };
 
-async function fetchLiveOddsRaw(
-  homeTeam: string,
-  awayTeam: string,
-  sport = 'soccer_epl'
-): Promise<LiveMarketQuote[]> {
-  const data = await rapidGet<{ data?: OddsApiEvent[] }>(
-    ODDS_HOST,
-    `/v4/sports/${sport}/odds?regions=eu&markets=h2h,totals&oddsFormat=decimal`,
-    'rapidapi_odds'
-  );
-  const events = data.data ?? [];
+function mapOddsEvents(events: OddsApiEvent[], homeTeam: string, awayTeam: string): LiveMarketQuote[] {
   const hit = events.find(
     (e) =>
       (e.home_team ?? '').toLowerCase().includes(homeTeam.toLowerCase().slice(0, 5)) &&
@@ -252,7 +217,9 @@ async function fetchLiveOddsRaw(
       const marketKey = mkt.key ?? 'unknown';
       let market = marketKey;
       if (marketKey === 'h2h') market = o.name ?? '1X2';
-      if (marketKey === 'totals') market = `+${o.point ?? '2.5'} goles`;
+      if (marketKey === 'totals' || marketKey === 'spreads') {
+        market = marketKey === 'totals' ? `+${o.point ?? '2.5'} goles` : `spread ${o.point ?? ''}`;
+      }
       out.push({
         market,
         line: o.point != null ? String(o.point) : null,
@@ -267,11 +234,35 @@ async function fetchLiveOddsRaw(
   return out;
 }
 
+async function fetchLiveOddsRaw(homeTeam: string, awayTeam: string): Promise<LiveMarketQuote[]> {
+  // 1) Upcoming odds (ejemplo oficial RapidAPI)
+  try {
+    const upcoming = await rapidApiGet<OddsApiEvent[] | { data?: OddsApiEvent[] }>(
+      RAPIDAPI_HOSTS.odds,
+      '/v4/sports/upcoming/odds?regions=us&oddsFormat=decimal&markets=h2h,spreads&dateFormat=iso',
+      'rapidapi_odds'
+    );
+    const events = Array.isArray(upcoming) ? upcoming : (upcoming.data ?? []);
+    const mapped = mapOddsEvents(events, homeTeam, awayTeam);
+    if (mapped.length) return mapped;
+  } catch {
+    // fallback por liga
+  }
+
+  // 2) Fallback soccer_epl h2h+totals
+  const data = await rapidApiGet<OddsApiEvent[] | { data?: OddsApiEvent[] }>(
+    RAPIDAPI_HOSTS.odds,
+    '/v4/sports/soccer_epl/odds?regions=eu&markets=h2h,totals&oddsFormat=decimal',
+    'rapidapi_odds'
+  );
+  const events = Array.isArray(data) ? data : (data.data ?? []);
+  return mapOddsEvents(events, homeTeam, awayTeam);
+}
+
 export async function fetchLiveMarketOdds(input: {
   homeTeam: string;
   awayTeam: string;
   matchDateYmd: string;
-  sportKey?: string;
 }): Promise<LiveMarketQuote[]> {
   if (!isRapidApiConfigured()) return [];
   const cache = getApiCacheStore();
@@ -285,8 +276,7 @@ export async function fetchLiveMarketOdds(input: {
         cacheKey: key,
         provider: 'rapidapi_odds',
         policy: CACHE_POLICIES.liveOdds,
-        fetcher: () =>
-          fetchLiveOddsRaw(input.homeTeam, input.awayTeam, input.sportKey ?? 'soccer_epl'),
+        fetcher: () => fetchLiveOddsRaw(input.homeTeam, input.awayTeam),
       });
       return result.data;
     },
@@ -298,6 +288,8 @@ export type RapidApiMatchEnrichment = {
   homeStats: TeamRollingStats | null;
   awayStats: TeamRollingStats | null;
   liveOdds: LiveMarketQuote[];
+  footballPrediction: FootballPredictionHit | null;
+  sportScore: SportScoreMatchEnrichment;
   notes: string[];
 };
 
@@ -305,22 +297,51 @@ export async function enrichMatchFromRapidApi(input: {
   homeTeam: string;
   awayTeam: string;
   matchDateYmd: string;
+  federation?: string;
 }): Promise<RapidApiMatchEnrichment> {
   const notes: string[] = [];
   if (!isRapidApiConfigured()) {
     notes.push('RapidAPI omitido (RAPIDAPI_KEY ausente).');
-    return { homeStats: null, awayStats: null, liveOdds: [], notes };
+    return {
+      homeStats: null,
+      awayStats: null,
+      liveOdds: [],
+      footballPrediction: null,
+      sportScore: { events: [], homeTeamProfile: null, awayTeamProfile: null },
+      notes,
+    };
   }
 
-  const [homeStats, awayStats, liveOdds] = await Promise.all([
+  const [homeStats, awayStats, liveOdds, footballPrediction, sportScore] = await Promise.all([
     fetchTeamRollingStats(input.homeTeam),
     fetchTeamRollingStats(input.awayTeam),
     fetchLiveMarketOdds(input),
+    fetchFootballPredictionForMatch(input),
+    enrichMatchFromSportScore(input),
   ]);
 
-  if (homeStats) notes.push(`RapidAPI local: ${homeStats.sampleSize} FT (μ córners ${homeStats.corners}).`);
-  if (awayStats) notes.push(`RapidAPI visitante: ${awayStats.sampleSize} FT.`);
-  if (liveOdds.length) notes.push(`Cuotas live RapidAPI: ${liveOdds.length} líneas.`);
+  if (homeStats) notes.push(`API-Football local: ${homeStats.sampleSize} FT.`);
+  if (awayStats) notes.push(`API-Football visitante: ${awayStats.sampleSize} FT.`);
+  if (liveOdds.length) notes.push(`Odds live: ${liveOdds.length} líneas (upcoming/odds).`);
+  if (footballPrediction) {
+    notes.push(
+      `Football Prediction: ${footballPrediction.prediction ?? 'n/d'}${
+        footballPrediction.probHome != null
+          ? ` (1 ${Math.round(footballPrediction.probHome * 100)}%)`
+          : ''
+      }.`
+    );
+  }
+  if (sportScore.events.length) {
+    const ev = sportScore.events[0];
+    notes.push(
+      `SportScore: ${ev.homeTeam} vs ${ev.awayTeam}${ev.status ? ` (${ev.status})` : ''}${
+        ev.scoreHome != null && ev.scoreAway != null ? ` ${ev.scoreHome}-${ev.scoreAway}` : ''
+      }.`
+    );
+  } else if (sportScore.homeTeamProfile || sportScore.awayTeamProfile) {
+    notes.push('SportScore: perfiles de equipo (widget v6).');
+  }
 
-  return { homeStats, awayStats, liveOdds, notes };
+  return { homeStats, awayStats, liveOdds, footballPrediction, sportScore, notes };
 }

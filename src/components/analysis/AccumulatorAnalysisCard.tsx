@@ -5,14 +5,12 @@ import {
   Card,
   CardContent,
   Chip,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
   Stack,
   Typography,
 } from '@mui/material';
+import { IconChartLine, IconCoin, IconShield, IconTrendingUp } from '@tabler/icons-react';
 import { formatReadablePick } from '@/lib/match-display';
+import AnalysisDisclaimer from '@/components/analysis/results/AnalysisDisclaimer';
 
 export type AccumulatorResultView = {
   riskScore: string | number | null;
@@ -99,8 +97,43 @@ function parseLegs(summary: string | undefined): LegLine[] {
     });
 }
 
+function MetricHero({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  color: string;
+}) {
+  return (
+    <Box
+      sx={{
+        flex: 1,
+        minWidth: 100,
+        p: 2,
+        borderRadius: 2.5,
+        bgcolor: `${color}10`,
+        border: '1px solid',
+        borderColor: `${color}40`,
+        textAlign: 'center',
+      }}
+    >
+      <Box sx={{ color, mb: 0.5, display: 'flex', justifyContent: 'center' }}>{icon}</Box>
+      <Typography variant="h4" fontWeight={900} color={color} lineHeight={1}>
+        {value}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" fontWeight={600}>
+        {label}
+      </Typography>
+    </Box>
+  );
+}
+
 /**
- * Resultado de análisis de combinada: partido en negrita + pick legible.
+ * Resultado visual de combinada — métricas arriba, piernas en tarjetas, texto al final.
  */
 export default function AccumulatorAnalysisCard({ result }: { result: AccumulatorResultView }) {
   const ai = tryParseAiJson(result.response);
@@ -127,79 +160,122 @@ export default function AccumulatorAnalysisCard({ result }: { result: Accumulato
   const stake = result.recommendedStake ?? ai?.recommended_stake ?? '—';
 
   return (
-    <Card sx={{ mb: 3 }}>
-      <CardContent>
-        <Typography variant="h6" fontWeight={700} gutterBottom>
-          Resultado · {result.name ?? 'Combinada'}
-        </Typography>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={2}>
-          <Chip label={`Riesgo ${risk}`} color="warning" variant="outlined" />
-          <Chip label={`Valor esperado ${ev}`} color="success" variant="outlined" />
-          <Chip label={`Apuesta ${stake}`} color="info" variant="outlined" />
-          <Chip label={result.provider} color="primary" />
-        </Stack>
-
-        {legs.length > 0 && (
-          <Box mb={2}>
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-              Piernas de la combinada
+    <Card sx={{ mb: 3, borderRadius: 3, overflow: 'hidden' }}>
+      <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+        <Stack spacing={2.5}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+            <Typography variant="h5" fontWeight={900}>
+              {result.name ?? 'Combinada'}
             </Typography>
-            <List dense disablePadding>
+            <Chip label={result.provider} color="primary" sx={{ fontWeight: 700 }} />
+          </Stack>
+
+          <Stack direction="row" flexWrap="wrap" gap={1.5}>
+            <MetricHero
+              icon={<IconShield size={22} />}
+              label="Riesgo"
+              value={risk}
+              color="#ed6c02"
+            />
+            <MetricHero
+              icon={<IconTrendingUp size={22} />}
+              label="Valor esp."
+              value={ev}
+              color="#2e7d32"
+            />
+            <MetricHero
+              icon={<IconCoin size={22} />}
+              label="Stake sugerido"
+              value={stake}
+              color="#0288d1"
+            />
+            <MetricHero
+              icon={<IconChartLine size={22} />}
+              label="Piernas"
+              value={legs.length}
+              color="#7b1fa2"
+            />
+          </Stack>
+
+          {legs.length > 0 && (
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                gap: 1.5,
+              }}
+            >
               {legs.map((leg, i) => {
-                const pickLabel = formatReadablePick(
-                  leg.pick,
-                  leg.homeTeam,
-                  leg.awayTeam
-                );
+                const pickLabel = formatReadablePick(leg.pick, leg.homeTeam, leg.awayTeam);
                 return (
-                  <ListItem key={i} sx={{ px: 0, alignItems: 'flex-start' }}>
-                    <ListItemText
-                      primary={
-                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                          {leg.kickoff && (
-                            <Chip size="small" label={leg.kickoff} variant="outlined" />
-                          )}
-                          <Typography component="span" fontWeight={800}>
-                            {leg.matchLabel ?? leg.text}
+                  <Box
+                    key={i}
+                    sx={{
+                      p: 1.75,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderLeft: '4px solid',
+                      borderLeftColor: 'primary.main',
+                      bgcolor: 'action.hover',
+                    }}
+                  >
+                    <Stack direction="row" spacing={0.75} alignItems="center" mb={0.75}>
+                      {leg.kickoff && (
+                        <Chip size="small" label={leg.kickoff} variant="outlined" sx={{ height: 22 }} />
+                      )}
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                        Pierna {i + 1}
+                      </Typography>
+                    </Stack>
+                    <Typography fontWeight={800} variant="body1" lineHeight={1.25}>
+                      {leg.matchLabel ?? leg.text}
+                    </Typography>
+                    {leg.pick && (
+                      <Stack direction="row" spacing={1} alignItems="baseline" mt={1}>
+                        <Typography variant="body2" fontWeight={600} color="text.secondary">
+                          {pickLabel}
+                        </Typography>
+                        {leg.odds && (
+                          <Typography variant="h6" fontWeight={900} color="primary.main">
+                            @{leg.odds}
                           </Typography>
-                        </Stack>
-                      }
-                      secondary={
-                        leg.pick ? (
-                          <Typography variant="body2" color="text.secondary" component="span">
-                            Posible resultado: <strong>{pickLabel}</strong>
-                            {leg.odds ? ` · Cuota ${leg.odds}` : ''}
-                          </Typography>
-                        ) : undefined
-                      }
-                    />
-                  </ListItem>
+                        )}
+                      </Stack>
+                    )}
+                  </Box>
                 );
               })}
-            </List>
-          </Box>
-        )}
+            </Box>
+          )}
 
-        {rationale && (
-          <>
-            <Divider sx={{ my: 1.5 }} />
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-              Análisis
-            </Typography>
-            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-              {rationale}
-            </Typography>
-          </>
-        )}
+          {rationale && (
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: 'grey.50',
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Typography variant="overline" color="text.secondary" fontWeight={700}>
+                Por qué esta combinada
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1, lineHeight: 1.7, color: 'text.secondary' }}>
+                {rationale}
+              </Typography>
+            </Box>
+          )}
 
-        {!rationale && ai?.raw && (
-          <>
-            <Divider sx={{ my: 1.5 }} />
+          {!rationale && ai?.raw && (
             <Typography variant="body2" color="text.secondary">
               No se pudo estructurar la respuesta del modelo.
             </Typography>
-          </>
-        )}
+          )}
+
+          <AnalysisDisclaimer />
+        </Stack>
       </CardContent>
     </Card>
   );

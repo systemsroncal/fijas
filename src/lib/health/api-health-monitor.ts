@@ -4,6 +4,7 @@
  */
 
 import type { APIHealthStatus, DataProviderId } from '@/lib/analysis/contracts';
+import { RAPIDAPI_PROVIDER_LABELS, type RapidApiProviderId } from '@/lib/rapidapi/hosts';
 import type { AiProvider } from '@prisma/client';
 
 export type ProviderKind = 'data' | 'llm';
@@ -37,9 +38,12 @@ const DEFAULT_OPTS: Required<HealthMonitorOptions> = {
   halfOpenMaxProbes: 1,
 };
 
+const RAPIDAPI_DATA_PROVIDERS: Array<{ id: RapidApiProviderId; label: string }> = (
+  Object.entries(RAPIDAPI_PROVIDER_LABELS) as Array<[RapidApiProviderId, string]>
+).map(([id, label]) => ({ id, label }));
+
 const DATA_PROVIDERS: Array<{ id: DataProviderId; label: string }> = [
-  { id: 'rapidapi_football', label: 'RapidAPI API-Football' },
-  { id: 'rapidapi_odds', label: 'RapidAPI The Odds API' },
+  ...RAPIDAPI_DATA_PROVIDERS,
   { id: 'thesportsdb', label: 'TheSportsDB' },
   { id: 'football_data', label: 'football-data.org' },
   { id: 'database_scrape', label: 'BD scrape local' },
