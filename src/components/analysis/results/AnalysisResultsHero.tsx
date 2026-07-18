@@ -2,6 +2,7 @@
 
 import {
   Avatar,
+  Alert,
   Box,
   Chip,
   CircularProgress,
@@ -158,6 +159,18 @@ export default function AnalysisResultsHero({
           <Chip size="small" color="warning" variant="outlined" label="Solo modelo" />
         )}
       </Stack>
+
+      {payload.dataQuality?.sparse && (
+        <Alert severity="warning" sx={{ mb: 2 }} variant="outlined">
+          Datos limitados para este partido (sin forma scrapeada ni cuotas de casa).
+          {payload.dataQuality.leagueBaseline
+            ? ` Se usó baseline de liga: ${payload.dataQuality.leagueBaseline}.`
+            : ' El modelo usa estimación por liga.'}
+          {payload.rapidApi?.liveOddsCount
+            ? ` RapidAPI aportó ${payload.rapidApi.liveOddsCount} líneas de cuotas.`
+            : ' Configura RAPIDAPI_KEY y revisa «Estado APIs» si los resultados parecen genéricos.'}
+        </Alert>
+      )}
 
       {homeTeam !== 'N/A' ? (
         <Stack

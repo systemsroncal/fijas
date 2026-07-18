@@ -28,6 +28,7 @@ import type {
 } from '@/lib/ai/analysis-types';
 import { buildAnalysisBrief, sanitizeNarrative } from '@/lib/ai/analysis-brief';
 import { applyFormToMatchContext } from '@/lib/ai/form-stats';
+import { leagueLambdaBaselines } from '@/lib/ai/league-baselines';
 import { applyContextFactorsToPayload } from '@/lib/ai/match-context-factors';
 import {
   areMarketsCompatible,
@@ -347,6 +348,12 @@ export function buildModelPayload(
         ? 'away'
         : 'draw';
 
+  const bookOdds = implied1x2FromCtx(ctxWithForm);
+  const hasBookOdds = bookOdds != null;
+  const hasExternalProb = Boolean(ctxWithForm.externalProb1x2);
+  const hasTeamStats = Boolean(ctxWithForm.teamStatsHome && ctxWithForm.teamStatsAway);
+  const leagueBase = !form.available && !hasBookOdds ? leagueLambdaBaselines(ctx.league) : null;
+
   const payload: StructuredMatchPayload = {
     mode,
     match: {
@@ -417,6 +424,14 @@ export function buildModelPayload(
     },
     proposedAccumulators: proposed,
     confidence,
+    dataQuality: {
+      sparse: !form.available && !hasBookOdds && !hasExternalProb && !hasTeamStats,
+      hasForm: form.available,
+      hasBookOdds,
+      hasExternalProb,
+      hasTeamStats,
+      leagueBaseline: leagueBase?.label ?? null,
+    },
     edgeSummary: `Mejor edge: ${
       bestEdge ? labelMarket(bestEdge.market, bestEdge.line, home, away) : 'N/A'
     }. Cuotas de casa: ${bookCount}/${edges.length}. λ ${probs.lambdaHome.toFixed(2)}-${probs.lambdaAway.toFixed(2)}${
@@ -461,6 +476,7 @@ export function refreshModelWithForm(
     picks: fresh.picks,
     proposedAccumulators: fresh.proposedAccumulators,
     confidence: fresh.confidence,
+    dataQuality: fresh.dataQuality,
     edgeSummary: fresh.edgeSummary,
     model: fresh.model,
     brief: fresh.brief,

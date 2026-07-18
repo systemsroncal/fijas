@@ -223,6 +223,15 @@ export type StructuredMatchPayload = {
   };
   proposedAccumulators: ProposedAccumulator[];
   confidence: number;
+  /** Calidad de datos usados por el modelo (para avisos en UI) */
+  dataQuality?: {
+    sparse: boolean;
+    hasForm: boolean;
+    hasBookOdds: boolean;
+    hasExternalProb: boolean;
+    hasTeamStats: boolean;
+    leagueBaseline: string | null;
+  };
   edgeSummary: string;
   brief?: AnalysisBrief;
   disclaimer: string;

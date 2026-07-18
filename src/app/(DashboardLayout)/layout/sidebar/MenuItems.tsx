@@ -10,6 +10,7 @@ import {
   IconClock,
   IconSpider,
   IconFileText,
+  IconActivityHeartbeat,
 } from '@tabler/icons-react';
 
 const Menuitems = [
@@ -56,6 +57,12 @@ const Menuitems = [
     title: 'API Keys',
     icon: IconKey,
     href: '/settings/api-keys',
+  },
+  {
+    id: 'api-status',
+    title: 'Estado APIs',
+    icon: IconActivityHeartbeat,
+    href: '/settings/api-status',
   },
   {
     navlabel: true,

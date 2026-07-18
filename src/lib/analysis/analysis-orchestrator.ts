@@ -10,6 +10,7 @@ import { getApiHealthMonitor } from '@/lib/health/api-health-monitor';
 import { applySportsDbToPayload } from '@/lib/sportsdb/enrich';
 import { applyFootballDataToPayload } from '@/lib/football-data/enrich';
 import { applyRapidApiToPayload } from '@/lib/rapidapi/enrich';
+import { applyFormToMatchContext } from '@/lib/ai/form-stats';
 import { refreshModelWithForm, buildModelPayload } from '@/lib/ai/structured-analysis';
 import {
   getLlmCascadeManager,
@@ -60,9 +61,13 @@ export class AnalysisOrchestrator {
 
     emit({ step: 'poisson', message: 'Motor Poisson (red neuronal)…', pct: 52 });
 
-    let payload = buildModelPayload(input.ctx, input.mode === 'ACCUMULATOR' ? 'MATCH' : input.mode, {
-      form: input.form,
-    });
+    let workingCtx = applyFormToMatchContext(input.ctx, input.form);
+
+    let payload = buildModelPayload(
+      workingCtx,
+      input.mode === 'ACCUMULATOR' ? 'MATCH' : input.mode,
+      { form: input.form }
+    );
 
     if (input.matchDiagnostics) {
       payload = { ...payload, matchDiagnostics: input.matchDiagnostics };
@@ -106,7 +111,7 @@ export class AnalysisOrchestrator {
     }
 
     if (payload.form?.available) {
-      payload = refreshModelWithForm(input.ctx, payload);
+      payload = refreshModelWithForm(workingCtx, payload);
     }
 
     // RapidAPI — stats reales + cuotas live (Épica 1)
@@ -117,7 +122,9 @@ export class AnalysisOrchestrator {
       pct: 66,
     });
     if (isRapidApiConfigured()) {
-      payload = await applyRapidApiToPayload(payload, input.ctx);
+      const rapid = await applyRapidApiToPayload(payload, workingCtx);
+      payload = rapid.payload;
+      workingCtx = rapid.ctx as typeof workingCtx;
       emit({
         step: 'rapidapi',
         source: 'rapidapi',

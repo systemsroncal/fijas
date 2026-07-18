@@ -11,9 +11,9 @@ import { mergeLiveOddsIntoContext } from '@/lib/rapidapi/odds-merge';
 export async function applyRapidApiToPayload(
   payload: StructuredMatchPayload,
   ctx: MatchContext & { id?: string }
-): Promise<StructuredMatchPayload> {
+): Promise<{ payload: StructuredMatchPayload; ctx: MatchContext & { id?: string } }> {
   const match = payload.match;
-  if (!match?.homeTeam || !match?.awayTeam) return payload;
+  if (!match?.homeTeam || !match?.awayTeam) return { payload, ctx };
 
   const enriched = await enrichMatchFromRapidApi({
     homeTeam: match.homeTeam,
@@ -21,11 +21,27 @@ export async function applyRapidApiToPayload(
     matchDateYmd: match.matchDate ?? ctx.matchDateYmd ?? new Date().toISOString().slice(0, 10),
   });
 
+  const fp = enriched.footballPrediction;
+  const externalProb1x2 =
+    fp?.probHome != null && fp?.probAway != null
+      ? {
+          home: fp.probHome > 1 ? fp.probHome / 100 : fp.probHome,
+          draw:
+            fp.probDraw != null
+              ? fp.probDraw > 1
+                ? fp.probDraw / 100
+                : fp.probDraw
+              : 0.28,
+          away: fp.probAway > 1 ? fp.probAway / 100 : fp.probAway,
+        }
+      : ctx.externalProb1x2 ?? null;
+
   const ctxWithStats: MatchContext = {
     ...ctx,
     teamStatsHome: enriched.homeStats,
     teamStatsAway: enriched.awayStats,
     liveOdds: enriched.liveOdds,
+    externalProb1x2,
   };
 
   const ctxMerged = mergeLiveOddsIntoContext(ctxWithStats, enriched.liveOdds);
@@ -89,5 +105,5 @@ export async function applyRapidApiToPayload(
     next = refreshModelWithForm(ctxMerged, next);
   }
 
-  return next;
+  return { payload: next, ctx: ctxMerged };
 }

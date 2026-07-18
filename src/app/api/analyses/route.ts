@@ -222,6 +222,34 @@ type LegJson = {
   label?: string;
 };
 
+function pickBestPrediction(
+  predictions?: Array<{
+    betChoice?: string | null;
+    oddsHome?: Prisma.Decimal | null;
+    oddsDraw?: Prisma.Decimal | null;
+    oddsAway?: Prisma.Decimal | null;
+    oddsOver?: Prisma.Decimal | null;
+    oddsUnder?: Prisma.Decimal | null;
+    statsNote?: string | null;
+  }>
+) {
+  if (!predictions?.length) return null;
+  const with1x2 = predictions.find(
+    (p) =>
+      p.oddsHome != null &&
+      p.oddsAway != null &&
+      Number(p.oddsHome) > 1 &&
+      Number(p.oddsAway) > 1
+  );
+  if (with1x2) return with1x2;
+  const partial = predictions.find(
+    (p) =>
+      (p.oddsHome != null && Number(p.oddsHome) > 1) ||
+      (p.oddsAway != null && Number(p.oddsAway) > 1)
+  );
+  return partial ?? predictions[0];
+}
+
 function toCtx(m: {
   id: string;
   homeTeam: string;
@@ -246,7 +274,7 @@ function toCtx(m: {
     kickoff: m.kickoff,
     league: m.league,
   });
-  const p = m.predictions?.[0];
+  const p = pickBestPrediction(m.predictions);
   const matchDateYmd = m.matchDate ? localDateISO(new Date(m.matchDate)) : null;
   const note = m.predictions?.map((x) => x.statsNote).filter(Boolean).join(' ') ?? '';
   const dbScore =
@@ -500,7 +528,7 @@ export async function POST(request: Request) {
       }
       const match = await prisma.match.findUnique({
         where: { id: body.matchId },
-        include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 3 } },
+        include: { predictions: { orderBy: { scrapedAt: 'desc' }, take: 12 } },
       });
       if (!match) {
         return NextResponse.json({ error: 'Partido no encontrado' }, { status: 404 });

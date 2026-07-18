@@ -4,6 +4,10 @@
  */
 
 import type { TeamRecentFormStats, TeamRollingStats, LiveMarketQuote } from '@/lib/ai/analysis-types';
+import {
+  adjustLambdasFromTeamStats,
+  leagueLambdaBaselines,
+} from '@/lib/ai/league-baselines';
 
 export type MatchContext = {
   homeTeam: string;
@@ -38,6 +42,8 @@ export type MatchContext = {
   /** Cuotas live agregadas (RapidAPI + scrape) */
   liveOdds?: LiveMarketQuote[];
   oddsSource?: 'scrape' | 'rapidapi' | 'mixed';
+  /** Probabilidades 1X2 externas (0–1), p. ej. Football Prediction API */
+  externalProb1x2?: { home: number; draw: number; away: number } | null;
 };
 
 export type Implied1x2 = { home: number; draw: number; away: number };
@@ -101,11 +107,25 @@ export function blend1x2WithMarket(
   marketWeight = 0.62
 ): Pick<ModelProbs, 'home' | 'draw' | 'away'> {
   const mkt = implied1x2FromCtx(ctx);
-  if (!mkt) return pois;
-  const w = marketWeight;
-  const home = pois.home * (1 - w) + mkt.home * w;
-  const draw = pois.draw * (1 - w) + mkt.draw * w;
-  const away = pois.away * (1 - w) + mkt.away * w;
+  const ext = ctx.externalProb1x2;
+  let home = pois.home;
+  let draw = pois.draw;
+  let away = pois.away;
+
+  if (mkt) {
+    const w = marketWeight;
+    home = home * (1 - w) + mkt.home * w;
+    draw = draw * (1 - w) + mkt.draw * w;
+    away = away * (1 - w) + mkt.away * w;
+  }
+
+  if (ext && ext.home > 0 && ext.away > 0) {
+    const w = mkt ? 0.28 : 0.4;
+    home = home * (1 - w) + ext.home * w;
+    draw = draw * (1 - w) + (ext.draw ?? 0.28) * w;
+    away = away * (1 - w) + ext.away * w;
+  }
+
   const sum = home + draw + away || 1;
   return { home: home / sum, draw: draw / sum, away: away / sum };
 }
@@ -141,9 +161,19 @@ export function estimateLambdas(ctx: MatchContext): { home: number; away: number
       home *= 1.03; // ventaja local mínima si formas muy parejas
     }
   } else {
-    home = 1.15;
-    away = 1.1;
+    const leagueBase = leagueLambdaBaselines(ctx.league);
+    home = leagueBase.home;
+    away = leagueBase.away;
   }
+
+  const adjusted = adjustLambdasFromTeamStats(
+    home,
+    away,
+    ctx.teamStatsHome,
+    ctx.teamStatsAway
+  );
+  home = adjusted.home;
+  away = adjusted.away;
 
   const mktEarly = implied1x2FromCtx(ctx);
   // Cuotas de casa (señal fuerte del mercado → λ)

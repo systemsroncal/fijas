@@ -25,6 +25,7 @@ import PageContainer from '@/app/(DashboardLayout)/components/container/PageCont
 import { AI_PROVIDERS, ANALYSIS_PROVIDER_OPTIONS, NEURAL_PROVIDER_ID, type AnalysisProviderId } from '@/lib/ai/providers-client';
 import MatchAnalysisDashboard from '@/components/analysis/MatchAnalysisDashboard';
 import AnalysisProgressDialog from '@/components/analysis/AnalysisProgressDialog';
+import ApiStatusPanel from '@/components/system/ApiStatusPanel';
 import type { AnalysisProgressEvent, StructuredMatchPayload } from '@/lib/ai/analysis-types';
 import { detectSport, isJunkMatch, type SportKind } from '@/lib/match-display';
 import { localDateISO } from '@/lib/local-date';
@@ -66,7 +67,7 @@ type Analysis = {
 };
 
 type Mode = 'MATCH' | 'ACCUMULATOR' | 'RANDOM' | 'SUGGESTED';
-type SubTab = 'current' | 'history';
+type SubTab = 'current' | 'history' | 'apis';
 
 function isMatchDashboardPayload(value: unknown): value is StructuredMatchPayload {
   if (!value || typeof value !== 'object') return false;
@@ -236,6 +237,7 @@ export default function AnalysesPage() {
         : ANALYSIS_PROVIDER_OPTIONS.find((p) => p.id === provider)?.label ?? provider;
 
     setRunning(true);
+    setPayload(null);
     setProgressEvents([
       {
         type: 'progress',
@@ -480,6 +482,7 @@ export default function AnalysesPage() {
           >
             <Tab value="current" label="Actual" />
             <Tab value="history" label={`Historial (${modeHistory.length})`} />
+            <Tab value="apis" label="Estado APIs" />
           </Tabs>
 
           {subTab === 'current' && (
@@ -592,6 +595,7 @@ export default function AnalysesPage() {
               {payload && (
                 <Box>
                   <MatchAnalysisDashboard
+                    key={payload.match?.id ?? `${payload.match?.homeTeam}-${payload.match?.awayTeam}`}
                     payload={payload}
                     onAnalyzeMatch={analyzeMatchById}
                     onReanalyze={reanalyzeCurrent}
@@ -678,6 +682,12 @@ export default function AnalysesPage() {
                   );
                 })
               )}
+            </Stack>
+          )}
+
+          {subTab === 'apis' && (
+            <Stack spacing={2}>
+              <ApiStatusPanel compact />
             </Stack>
           )}
         </CardContent>
